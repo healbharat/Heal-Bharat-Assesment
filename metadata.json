@@ -1,0 +1,8 @@
+{
+  "name": "Tronex Platform",
+  "description": "A professional AI-powered communication assessment platform for interns. Features voice-based Q&A, real-time speech analysis, and detailed feedback using Gemini.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
