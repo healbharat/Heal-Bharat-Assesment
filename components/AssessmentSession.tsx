@@ -352,5 +352,3 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
 };
 
 export default AssessmentSession;
-
-Kar kay karach te 
