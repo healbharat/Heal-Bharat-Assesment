@@ -10,7 +10,8 @@ const BLOCKED_KEY = 'interncomm_blocked_users';
 // Set this to FALSE to use the browser's LocalStorage (Simulation)
 const USE_REAL_BACKEND = true; 
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://heal-bharat-assesment.onrender.com/api';
+
 
 export interface BlockedUser {
   name: string;
