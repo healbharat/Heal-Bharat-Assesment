@@ -12,8 +12,8 @@ interface AssessmentSessionProps {
   onBlock: () => void;
 }
 
-const READ_DURATION = 30;
-const RECORD_DURATION = 20;
+const READ_DURATION = 10;
+const RECORD_DURATION = 10;
 
 type Phase = 'PREP' | 'RECORDING' | 'PROCESSING';
 
