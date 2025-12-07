@@ -174,7 +174,15 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
   const processAnswer = async (audioBlob: Blob) => {
     try {
       const base64Audio = await blobToBase64(audioBlob);
-      const mimeType = audioBlob.type || 'audio/webm';
+     const mimeType =
+  MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : MediaRecorder.isTypeSupported("audio/mp4")
+    ? "audio/mp4"
+    : "audio/webm";
+
+const blob = new Blob(chunksRef.current, { type: mimeType });
+
       
       const evaluation = await evaluateAnswer(currentQuestion, base64Audio, mimeType);
       
