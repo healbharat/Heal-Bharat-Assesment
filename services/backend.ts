@@ -1,18 +1,28 @@
 import { AssessmentRecord, StudentProfile, EvaluationResult } from '../types';
 
+// CONFIG
 const USE_REAL_BACKEND = true;
 
-const API_BASE_URL = `${import.meta.env.VITE_BACKEND_URL}/api`;
+// YOUR BACKEND URL
+const API_BASE_URL = "https://heal-bharat-backend.onrender.com/api";
+
+export interface BlockedUser {
+  name: string;
+  email: string;
+  phone: string;
+  timestamp: number;
+  reason: string;
+}
 
 export const BackendService = {
 
   verifyAccessCode: (code: string): boolean => {
-    return code === 'assess-healbharat';
+    return code === "assess-healbharat";
   },
 
   saveAssessment: async (profile, topic, difficulty, aptitudeScore, technicalScore, communicationResults) => {
     try {
-      const commTotal = communicationResults.reduce((acc, r) => acc + r.overallScore, 0);
+      const commTotal = communicationResults.reduce((a, r) => a + r.overallScore, 0);
       const commScore = Math.round(commTotal / communicationResults.length);
       const overallScore = Math.round((aptitudeScore + technicalScore + commScore) / 3);
 
@@ -38,8 +48,8 @@ export const BackendService = {
       });
 
       return res.ok;
-    } catch (error) {
-      console.error("saveAssessment ERROR:", error);
+    } catch (err) {
+      console.error("saveAssessment ERROR:", err);
       return false;
     }
   },
@@ -48,7 +58,48 @@ export const BackendService = {
     try {
       const res = await fetch(`${API_BASE_URL}/assessments`);
       return await res.json();
-    } catch (err) {
+    } catch {
+      return [];
+    }
+  },
+
+  blockUser: async (profile: StudentProfile, reason: string) => {
+    try {
+      await fetch(`${API_BASE_URL}/block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, reason })
+      });
+    } catch {}
+  },
+
+  unblockUser: async (email: string) => {
+    try {
+      await fetch(`${API_BASE_URL}/block/${email}`, {
+        method: "DELETE",
+      });
+    } catch {}
+  },
+
+  isUserBlocked: async (email: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/check-block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      return data.isBlocked;
+    } catch {
+      return false;
+    }
+  },
+
+  getBlockedUsers: async (): Promise<BlockedUser[]> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/blocked`);
+      return await res.json();
+    } catch {
       return [];
     }
   }
