@@ -107,19 +107,51 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
   };
 
   // -------------------  MIME DETECTION -------------------
-  const getSupportedMime = () => {
-    const types = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/mp4",
-      "audio/mpeg",
-      "audio/wav"
-    ];
-    for (const t of types) {
-      if (MediaRecorder.isTypeSupported(t)) return t;
+// determine supported mime type
+const getSupportedMime = () => {
+  if (typeof MediaRecorder === "undefined") return null;
+  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
+  if (MediaRecorder.isTypeSupported("audio/mp4")) return "audio/mp4";
+  if (MediaRecorder.isTypeSupported("audio/mpeg")) return "audio/mpeg";
+  return null;
+};
+
+const startRecordingPhase = () => {
+  setPhase('RECORDING');
+  setTimeLeft(RECORD_DURATION);
+
+  if (!mediaStreamRef.current) {
+    alert("Microphone not active. Ensure permissions are granted.");
+    return;
+  }
+
+  const supported = getSupportedMime();
+  let options = supported ? { mimeType: supported } : undefined;
+
+  let mediaRecorder;
+  try {
+    mediaRecorder = new MediaRecorder(mediaStreamRef.current, options);
+  } catch (err) {
+    console.error("MediaRecorder start error", err);
+    // try fallback without options
+    try {
+      mediaRecorder = new MediaRecorder(mediaStreamRef.current);
+    } catch (err2) {
+      alert("Unable to start recorder on this browser/device. Try Chrome or update browser.");
+      console.error("MediaRecorder final failure", err2);
+      return;
     }
-    return "";
+  }
+
+  mediaRecorderRef.current = mediaRecorder;
+  chunksRef.current = [];
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
   };
+  mediaRecorder.start();
+  // ... rest unchanged
+};
 
   // -------------------  START RECORDING -------------------
   const startRecordingPhase = () => {
