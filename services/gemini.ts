@@ -1,101 +1,95 @@
-import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { Question, EvaluationResult } from "../types";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import type { Question, EvaluationResult } from "../types";
 
-// ------------------------------
-// 🔐 Load Gemini API Key correctly (Vite standard)
-// ------------------------------
+// Load API Key from Vite Environment
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
+// If missing key, show error in console
 if (!apiKey) {
   console.error("❌ Missing Gemini API Key! Add VITE_GEMINI_API_KEY in Render Environment.");
 }
 
-const ai = new GoogleGenAI({ apiKey });
+// Initialize Gemini Client
+const genAI = new GoogleGenerativeAI(apiKey);
 
-/* -----------------------------------------
-   ✅ Generate AI Questions
-------------------------------------------- */
+/**
+ * Generate Interview Questions
+ */
 export const generateQuestions = async (
   topic: string,
   difficulty: string,
   count: number = 3
 ): Promise<Question[]> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Generate ${count} interview questions on: "${topic}".
-                     Difficulty: ${difficulty}.
-                     Return STRICT JSON array.`
-            }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json"
-      }
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    return JSON.parse(response.text);
+    const prompt = `
+      Generate ${count} interview questions.
+      Topic: ${topic}
+      Difficulty: ${difficulty}
+      Return ONLY JSON array:
+      [{ "id": "1", "text": "question text", "difficulty": "Easy" }]
+    `;
+
+    const result = await model.generateContent(prompt);
+
+    return JSON.parse(result.response.text());
   } catch (err) {
     console.error("❌ Error generating questions:", err);
 
     return [
       { id: "1", text: "Tell me about yourself.", difficulty: "Easy" },
       { id: "2", text: "Why should we hire you?", difficulty: "Medium" },
-      { id: "3", text: "Describe a challenge you solved.", difficulty: "Hard" },
+      { id: "3", text: "Describe a difficult situation you handled.", difficulty: "Hard" },
     ];
   }
 };
 
-/* -----------------------------------------
-   ✅ Evaluate Recorded Audio (MOST IMPORTANT FIX)
-------------------------------------------- */
+/**
+ * Evaluate Audio Answer
+ */
 export const evaluateAnswer = async (
   question: Question,
   audioBase64: string,
   mimeType: string
 ): Promise<EvaluationResult> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Evaluate the candidate's audio response for the question:
-                     "${question.text}".
-                     
-                     Analyze:
-                     - Clarity
-                     - Confidence
-                     - Grammar
-                     - Content Quality
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-                     Give total score (0–100) + feedback.
-                     Return STRICT JSON.`
-            },
-            {
-              inlineData: {
-                mimeType,
-                data: audioBase64
-              }
-            }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json"
+    const prompt = `
+      Evaluate the spoken answer for the interview question: "${question.text}".
+      Analyze:
+      - clarity
+      - confidence
+      - grammar
+      - content quality
+      Score out of 100.
+      Return ONLY valid JSON:
+      {
+        "transcription": "",
+        "overallScore": 0,
+        "clarity": { "score": 0, "reasoning": "" },
+        "confidence": { "score": 0, "reasoning": "" },
+        "grammarAndFluency": { "score": 0, "reasoning": "" },
+        "contentQuality": { "score": 0, "reasoning": "" },
+        "keyTakeaways": [],
+        "improvementTips": []
       }
-    });
+    `;
 
-    const parsed = JSON.parse(response.text);
+    const result = await model.generateContent([
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType,
+          data: audioBase64,
+        },
+      },
+    ]);
+
+    const parsed = JSON.parse(result.response.text());
     parsed.questionId = question.id;
+
     return parsed;
   } catch (err) {
     console.error("❌ Evaluation Error:", err);
