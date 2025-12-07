@@ -2,7 +2,7 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Question, EvaluationResult } from "../types";
 
 // ✔ Correct way to load env variables in Vite
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const getApiKey = () => import.meta.env.VITE_GEMINI_API_KEY;
 
 if (!apiKey) {
   console.error("❌ Missing Gemini API Key! Add VITE_GEMINI_API_KEY in Render Environment.");
