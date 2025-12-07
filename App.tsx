@@ -13,7 +13,7 @@ import { generateQuestions } from './services/gemini';
 import { Question, EvaluationResult, AppView, StudentProfile } from './types';
 import { APTITUDE_QUESTIONS, TECHNICAL_QUESTIONS } from './data/staticQuestions';
 import { Loader2, Settings, Monitor, ShieldBan } from 'lucide-react';
-import { BackendService } from './services/backend';
+import { BackendService } from './services/backend.ts';
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.ACCESS_CODE);
