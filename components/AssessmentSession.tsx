@@ -42,44 +42,6 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
      AUDIO PLAYER — FINAL ROBUST VERSION
   ============================================= */
 
-  const handlePlayAudio = async () => {
-    if (audioPlayed || !currentQuestion?.audioBase64) return;
-
-    setIsPlayingAudio(true);
-    console.log("🔊 Starting audio playback...");
-    console.log("Base64 length:", currentQuestion.audioBase64.length);
-
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      const audioCtx = new AudioCtx();
-
-      if (audioCtx.state === "suspended") await audioCtx.resume();
-
-      // Convert base64 → ArrayBuffer
-      const binary = atob(currentQuestion.audioBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const arrayBuffer = bytes.buffer;
-
-      /* ---------- TRY #1: decodeAudioData (BEST) ---------- */
-      try {
-        console.log("Trying decodeAudioData...");
-        const buffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-
-        const src = audioCtx.createBufferSource();
-        src.buffer = buffer;
-        src.connect(audioCtx.destination);
-        src.onended = () => {
-          setIsPlayingAudio(false);
-          setAudioPlayed(true);
-          setPhase("DICTATION_TYPE");
-        };
-        src.start(0);
-        console.log("decodeAudioData success!");
-        return;
-      } catch (e) {
-        console.warn("decodeAudioData failed:", e);
-      }
 
       /* ---------- TRY #2: decodePCM (RAW PCM fallback) ---------- */
       try {
