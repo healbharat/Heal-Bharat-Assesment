@@ -63,7 +63,7 @@ export interface AssessmentRecord extends StudentProfile {
   // Metadata
   topic: string;
   difficulty: string;
-  results: EvaluationResult[]; // Communication detailed results
+  results?: EvaluationResult[]; // Communication detailed results (Optional now)
 }
 
 export enum AppView {
@@ -76,10 +76,13 @@ export enum AppView {
   
   TECHNICAL_INSTRUCTIONS = 'TECHNICAL_INSTRUCTIONS',
   TECHNICAL_TEST = 'TECHNICAL_TEST',
+
+  COMMUNICATION_INSTRUCTIONS = 'COMMUNICATION_INSTRUCTIONS',
+  COMMUNICATION_TEST = 'COMMUNICATION_TEST',
   
   ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
-  LANDING = 'LANDING', // Comm instructions
-  SETUP = 'SETUP',
-  ASSESSMENT = 'ASSESSMENT',
+  LANDING = 'LANDING', // Deprecated but kept for type safety if needed
+  SETUP = 'SETUP', // Deprecated
+  ASSESSMENT = 'ASSESSMENT', // Deprecated
   RESULTS = 'RESULTS'
 }
