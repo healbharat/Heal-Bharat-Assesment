@@ -231,3 +231,126 @@ export const TECHNICAL_QUESTIONS: McqQuestion[] = [
     correctAnswer: "CNN"
   }
 ];
+
+export const COMMUNICATION_QUESTIONS: McqQuestion[] = [
+    {
+        id: 'c1',
+        text: "Which of the following is the most professional subject line for an email requesting a meeting?",
+        options: ["Meeting?", "Can we talk?", "Request for Meeting: Project X Review", "Urgent meeting now"],
+        correctAnswer: "Request for Meeting: Project X Review"
+    },
+    {
+        id: 'c2',
+        text: "When a colleague interrupts you during a presentation, what is the best response?",
+        options: ["Shout at them to stop.", "Ignore them completely.", "Politely ask them to hold questions until the end.", "Walk out of the room."],
+        correctAnswer: "Politely ask them to hold questions until the end."
+    },
+    {
+        id: 'c3',
+        text: "Select the sentence with the correct grammatical structure.",
+        options: ["Me and him went to the meeting.", "He and I went to the meeting.", "Him and I went to the meeting.", "I and him went to the meeting."],
+        correctAnswer: "He and I went to the meeting."
+    },
+    {
+        id: 'c4',
+        text: "What does 'CC' stand for in an email?",
+        options: ["Carbon Copy", "Create Copy", "Color Code", "Contact Copy"],
+        correctAnswer: "Carbon Copy"
+    },
+    {
+        id: 'c5',
+        text: "Which of these implies 'Active Listening'?",
+        options: ["Planning your response while they speak.", "Nodding and maintaining eye contact.", "Checking your phone.", "Interrupting to correct them."],
+        correctAnswer: "Nodding and maintaining eye contact."
+    },
+    {
+        id: 'c6',
+        text: "How should you start a formal email to a new client named John Smith?",
+        options: ["Hi John,", "Dear Mr. Smith,", "Hey J,", "To Whom It May Concern,"],
+        correctAnswer: "Dear Mr. Smith,"
+    },
+    {
+        id: 'c7',
+        text: "Choose the correct word: 'Their proposal was ___ than ours.'",
+        options: ["more better", "gooder", "better", "best"],
+        correctAnswer: "better"
+    },
+    {
+        id: 'c8',
+        text: "What is the best way to decline a request from a coworker?",
+        options: ["No, I won't do it.", "I can't right now, maybe later.", "I am currently at capacity but can look at this next week.", "Ask someone else."],
+        correctAnswer: "I am currently at capacity but can look at this next week."
+    },
+    {
+        id: 'c9',
+        text: "Identify the passive voice sentence.",
+        options: ["The team completed the project.", "The project was completed by the team.", "They finished the work.", "We launched the product."],
+        correctAnswer: "The project was completed by the team."
+    },
+    {
+        id: 'c10',
+        text: "Which tone is most appropriate for a business report?",
+        options: ["Emotional and personal", "Objective and formal", "Casual and slang-filled", "Aggressive and direct"],
+        correctAnswer: "Objective and formal"
+    },
+    {
+        id: 'c11',
+        text: "What does 'BCC' mean in an email context?",
+        options: ["Blind Carbon Copy", "Back Carbon Copy", "Blank Carbon Copy", "Blind Contact Copy"],
+        correctAnswer: "Blind Carbon Copy"
+    },
+    {
+        id: 'c12',
+        text: "Choose the correct homophone: 'Please ___ the document attached.'",
+        options: ["reed", "read", "red", "real"],
+        correctAnswer: "read"
+    },
+    {
+        id: 'c13',
+        text: "If you don't understand a client's question, what should you do?",
+        options: ["Guess the answer.", "Ignore the question.", "Ask for clarification politely.", "Change the subject."],
+        correctAnswer: "Ask for clarification politely."
+    },
+    {
+        id: 'c14',
+        text: "What implies non-verbal communication?",
+        options: ["Email text", "Phone call audio", "Body language and facial expressions", "Written report"],
+        correctAnswer: "Body language and facial expressions"
+    },
+    {
+        id: 'c15',
+        text: "Which phrase is an idiom meaning 'to agree'?",
+        options: ["See eye to eye", "Break a leg", "Cost an arm and a leg", "Hit the sack"],
+        correctAnswer: "See eye to eye"
+    },
+    {
+        id: 'c16',
+        text: "What is the primary goal of constructive feedback?",
+        options: ["To hurt feelings", "To improve performance", "To show dominance", "To ignore issues"],
+        correctAnswer: "To improve performance"
+    },
+    {
+        id: 'c17',
+        text: "Select the correctly punctuated sentence.",
+        options: ["However I agree.", "However, I agree.", "However I, agree.", "However; I agree."],
+        correctAnswer: "However, I agree."
+    },
+    {
+        id: 'c18',
+        text: "Which is NOT a professional email sign-off?",
+        options: ["Sincerely,", "Best regards,", "Later,", "Kind regards,"],
+        correctAnswer: "Later,"
+    },
+    {
+        id: 'c19',
+        text: "To 'mitigate' a risk means to:",
+        options: ["Increase it", "Ignore it", "Reduce its severity", "Identify it"],
+        correctAnswer: "Reduce its severity"
+    },
+    {
+        id: 'c20',
+        text: "Which word best completes the sentence? 'The team showed great ___ in solving the crisis.'",
+        options: ["resilience", "laziness", "fear", "hesitation"],
+        correctAnswer: "resilience"
+    }
+];
