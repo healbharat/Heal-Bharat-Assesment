@@ -2,14 +2,13 @@
   "name": "healbharat-backend",
   "version": "1.0.0",
   "main": "server.js",
-  "type": "module",
   "scripts": {
-    "build": "cd .. && npm install && npm run build",
     "start": "node server.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
+    "@google/generative-ai": "latest",
     "express": "^4.18.2",
-    "dotenv": "^16.4.5"
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3"
   }
 }
