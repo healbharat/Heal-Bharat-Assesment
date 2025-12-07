@@ -15,35 +15,67 @@ const genAI = new GoogleGenerativeAI(apiKey);
 /**
  * Generate Interview Questions
  */
-export const generateQuestions = async (
-  topic: string,
-  difficulty: string,
-  count: number = 3
-): Promise<Question[]> => {
+// services/gemini.ts (frontend) - lightweight proxy client
+export const generateQuestions = async (topic: string, difficulty: string, count = 3) => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const prompt = `Generate ${count} interview questions for an intern position focusing on "${topic}". Difficulty: ${difficulty}. Return JSON array of objects: { id, text, difficulty }. Return JSON ONLY.`;
+    const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL || ""}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, model: "text-bison-001" })
+    });
 
-    const prompt = `
-      Generate ${count} interview questions.
-      Topic: ${topic}
-      Difficulty: ${difficulty}
-      Return ONLY JSON array:
-      [{ "id": "1", "text": "question text", "difficulty": "Easy" }]
-    `;
-
-    const result = await model.generateContent(prompt);
-
-    return JSON.parse(result.response.text());
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error(`Backend generate failed: ${txt}`);
+    }
+    const json = await resp.json();
+    // backend returns { text, raw }
+    let text = json.text || "";
+    // try parse
+    try {
+      const parsed = JSON.parse(text);
+      return parsed;
+    } catch {
+      // if model returned plain text list, try to fallback
+      // return fallback sample
+      console.warn("Could not parse model JSON, using fallback questions.");
+      return [
+        { id: "1", text: "Tell me about yourself.", difficulty: "Easy" },
+        { id: "2", text: "Why do you want this internship?", difficulty: "Medium" },
+        { id: "3", text: "Describe a team project you worked on.", difficulty: "Medium" }
+      ];
+    }
   } catch (err) {
-    console.error("❌ Error generating questions:", err);
-
+    console.error("Error generating questions:", err);
     return [
       { id: "1", text: "Tell me about yourself.", difficulty: "Easy" },
-      { id: "2", text: "Why should we hire you?", difficulty: "Medium" },
-      { id: "3", text: "Describe a difficult situation you handled.", difficulty: "Hard" },
+      { id: "2", text: "Why do you want this internship?", difficulty: "Medium" },
+      { id: "3", text: "Describe a team project you worked on.", difficulty: "Medium" }
     ];
   }
 };
+
+export const evaluateAnswer = async (question: any, audioBase64: string, mimeType = "audio/webm") => {
+  try {
+    const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL || ""}/api/evaluate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, audioBase64, mimeType })
+    });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error(`Backend evaluate failed: ${txt}`);
+    }
+    const json = await resp.json();
+    // backend returns { result, raw }
+    return json.result;
+  } catch (err) {
+    console.error("Evaluation Error:", err);
+    throw err;
+  }
+};
+
 
 /**
  * Evaluate Audio Answer
