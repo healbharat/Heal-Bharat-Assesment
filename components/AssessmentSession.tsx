@@ -32,23 +32,19 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
 
   const currentQuestion = questions[currentIndex];
 
-  // -------------------  SECURITY HANDLING  -------------------
+  // ------------------- SECURITY -------------------
   useEffect(() => {
     initMedia();
 
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        handleSecurityViolation();
-      }
+      if (document.hidden) handleSecurityViolation();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      }
+      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
@@ -56,43 +52,37 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
   const handleSecurityViolation = () => {
     setWarnings(prev => {
       const newCount = prev + 1;
-      if (newCount === 1) {
-        alert("WARNING (1/2): Screen minimization detected.");
-      } else if (newCount >= 2) {
-        onBlock();
-      }
+      if (newCount === 1) alert("WARNING 1/2: Screen minimized.");
+      else if (newCount >= 2) onBlock();
       return newCount;
     });
   };
 
-  // -------------------  INITIALIZE MEDIA -------------------
+  // ------------------- MEDIA INIT -------------------
   const initMedia = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       mediaStreamRef.current = stream;
       setMediaStream(stream);
-    } catch (err) {
-      alert("Camera & Microphone access required.");
+    } catch {
+      alert("Camera/Microphone required.");
     }
   };
 
   useEffect(() => {
-    if (videoRef.current && mediaStream) {
-      videoRef.current.srcObject = mediaStream;
-    }
+    if (videoRef.current && mediaStream) videoRef.current.srcObject = mediaStream;
   }, [mediaStream]);
 
-  // -------------------  QUESTION FLOW -------------------
+  // ------------------- QUESTION FLOW -------------------
   useEffect(() => {
     startPrepPhase();
     return () => timerRef.current && clearInterval(timerRef.current);
   }, [currentIndex]);
 
   const startPrepPhase = () => {
-    setPhase('PREP');
+    setPhase("PREP");
     setTimeLeft(READ_DURATION);
-
-    if (timerRef.current) clearInterval(timerRef.current);
+    clearInterval(timerRef.current!);
 
     timerRef.current = window.setInterval(() => {
       setTimeLeft(prev => {
@@ -106,54 +96,15 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
     }, 1000);
   };
 
-  // -------------------  MIME DETECTION -------------------
-// determine supported mime type
-const getSupportedMime = () => {
-  if (typeof MediaRecorder === "undefined") return null;
-  if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
-  if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
-  if (MediaRecorder.isTypeSupported("audio/mp4")) return "audio/mp4";
-  if (MediaRecorder.isTypeSupported("audio/mpeg")) return "audio/mpeg";
-  return null;
-};
-
-const startRecordingPhase = () => {
-  setPhase('RECORDING');
-  setTimeLeft(RECORD_DURATION);
-
-  if (!mediaStreamRef.current) {
-    alert("Microphone not active. Ensure permissions are granted.");
-    return;
-  }
-
-  const supported = getSupportedMime();
-  let options = supported ? { mimeType: supported } : undefined;
-
-  let mediaRecorder;
-  try {
-    mediaRecorder = new MediaRecorder(mediaStreamRef.current, options);
-  } catch (err) {
-    console.error("MediaRecorder start error", err);
-    // try fallback without options
-    try {
-      mediaRecorder = new MediaRecorder(mediaStreamRef.current);
-    } catch (err2) {
-      alert("Unable to start recorder on this browser/device. Try Chrome or update browser.");
-      console.error("MediaRecorder final failure", err2);
-      return;
-    }
-  }
-
-  mediaRecorderRef.current = mediaRecorder;
-  chunksRef.current = [];
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+  // ------------------- MIME DETECTOR -------------------
+  const getSupportedMime = () => {
+    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+    if (MediaRecorder.isTypeSupported("audio/webm")) return "audio/webm";
+    if (MediaRecorder.isTypeSupported("audio/mp4")) return "audio/mp4";
+    return "audio/webm";
   };
-  mediaRecorder.start();
-  // ... rest unchanged
-};
 
-  // -------------------  START RECORDING -------------------
+  // ------------------- FIXED RECORDING FUNCTION -------------------
   const startRecordingPhase = () => {
     setPhase("RECORDING");
     setTimeLeft(RECORD_DURATION);
@@ -164,38 +115,20 @@ const startRecordingPhase = () => {
     }
 
     const mimeType = getSupportedMime();
-    console.log("🎤 Using MIME:", mimeType || "DEFAULT");
-
     let recorder: MediaRecorder;
 
     try {
-      recorder = mimeType
-        ? new MediaRecorder(mediaStreamRef.current, { mimeType })
-        : new MediaRecorder(mediaStreamRef.current);
-    } catch (err: any) {
-      console.error("MediaRecorder create error:", err);
-      alert("Browser does not support audio recording: " + err.message);
-      return;
+      recorder = new MediaRecorder(mediaStreamRef.current, { mimeType });
+    } catch {
+      recorder = new MediaRecorder(mediaStreamRef.current);
     }
 
     mediaRecorderRef.current = recorder;
     chunksRef.current = [];
 
-    recorder.ondataavailable = e => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
+    recorder.ondataavailable = e => e.data.size > 0 && chunksRef.current.push(e.data);
 
-    recorder.onerror = e => {
-      console.error("Recorder Error:", e);
-    };
-
-    try {
-      recorder.start();
-    } catch (err: any) {
-      console.error("MediaRecorder start error:", err);
-      alert("Recording could not start: " + err.message);
-      return;
-    }
+    recorder.start();
 
     timerRef.current = window.setInterval(() => {
       setTimeLeft(prev => {
@@ -208,145 +141,60 @@ const startRecordingPhase = () => {
     }, 1000);
   };
 
-  // -------------------  STOP RECORDING -------------------
+  // ------------------- STOP -------------------
   const stopRecording = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    clearInterval(timerRef.current!);
 
     const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
 
-    if (recorder && recorder.state !== "inactive") {
-      recorder.stop();
-      setPhase("PROCESSING");
+    recorder.stop();
+    setPhase("PROCESSING");
 
-      recorder.onstop = async () => {
-        const mime = getSupportedMime() || "audio/webm";
-        const blob = new Blob(chunksRef.current, { type: mime });
-
-        console.log("🎧 Recorded Blob:", blob.type, blob.size);
-
-        await processAnswer(blob);
-      };
-    }
+    recorder.onstop = async () => {
+      const mimeType = getSupportedMime();
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      await processAnswer(blob);
+    };
   };
 
-  // -------------------  PROCESS ANSWER -------------------
+  // ------------------- PROCESS ANSWER -------------------
   const processAnswer = async (audioBlob: Blob) => {
     try {
-      if (!audioBlob || audioBlob.size < 200) {
-        console.error("❌ EMPTY AUDIO BLOB");
-        alert("Audio too low or empty. Speak louder next time.");
-      }
-
       const base64Audio = await blobToBase64(audioBlob);
-      const mimeType = audioBlob.type || "audio/webm";
-
-      const evaluation = await evaluateAnswer(currentQuestion, base64Audio, mimeType);
+      const evaluation = await evaluateAnswer(currentQuestion, base64Audio, audioBlob.type);
 
       const updated = [...results, evaluation];
       setResults(updated);
 
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-      } else {
-        onComplete(updated);
-      }
-    } catch (err: any) {
-      console.error("❌ Evaluation Error:", err);
-      alert("Error processing answer: " + err.message);
+      if (currentIndex < questions.length - 1) setCurrentIndex(i => i + 1);
+      else onComplete(updated);
 
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-      } else {
-        onComplete(results);
-      }
+    } catch (err) {
+      alert("Error evaluating answer.");
+      if (currentIndex < questions.length - 1) setCurrentIndex(i => i + 1);
+      else onComplete(results);
     }
   };
 
-  // -------------------  UI (UNCHANGED) -------------------
+  // ------------------- UI -------------------
   return (
-    <div className="max-w-6xl mx-auto w-full px-6 h-full flex flex-col justify-center relative font-sans">
-
-      {/* Camera Bubble */}
-      <div className="fixed bottom-6 right-6 z-50">
-        <div className="w-32 h-32 rounded-full border-4 border-indigo-600 shadow-2xl overflow-hidden bg-black">
-          {mediaStream ? (
-            <video ref={videoRef} autoPlay muted className="w-full h-full object-cover scale-x-[-1]" />
-          ) : (
-            <div className="flex items-center justify-center h-full text-white">
-              <Camera className="w-8 h-8 opacity-50" />
-            </div>
-          )}
-        </div>
+    <div className="max-w-6xl mx-auto w-full px-6 h-full flex flex-col justify-center">
+      <div className="fixed bottom-6 right-6 w-32 h-32 rounded-full overflow-hidden bg-black border-4 border-indigo-600">
+        {mediaStream ? <video ref={videoRef} autoPlay muted className="w-full h-full object-cover scale-x-[-1]" /> :
+          <Camera className="w-8 h-8 text-white mx-auto mt-10" />}
       </div>
 
-      {/* HEADER */}
-      <div className="mb-8">
-        <div className="flex justify-between items-end mb-4">
-          <div>
-            <span className="text-indigo-600 text-xs font-bold">Verbal Assessment</span>
-            <h2 className="text-3xl font-extrabold mt-2">Question {currentIndex + 1} / {questions.length}</h2>
-          </div>
+      <h2 className="text-3xl font-bold mb-4">Question {currentIndex + 1}/{questions.length}</h2>
 
-          <div>
-            <div className="flex items-center space-x-2 text-sm font-medium">
-              <ShieldAlert className={`w-4 h-4 ${warnings > 0 ? 'text-red-500' : 'text-gray-500'}`} />
-              <span>Warnings: {warnings}/2</span>
-            </div>
-          </div>
-        </div>
+      <p className="text-xl bg-white p-6 rounded-xl shadow">{currentQuestion.text}</p>
 
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div className="bg-indigo-600 h-2 rounded-full" style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }} />
-        </div>
+      <div className="mt-6 text-center text-4xl">
+        {phase !== "PROCESSING" && <>00:{timeLeft.toString().padStart(2, "0")}</>}
       </div>
 
-      {/* MAIN CONTENT */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-        
-        {/* LEFT — QUESTION */}
-        <div className="space-y-6 flex flex-col">
-          <div className="bg-white p-10 rounded-3xl shadow border">
-            <p className="text-3xl font-medium text-gray-800">{currentQuestion.text}</p>
-          </div>
-
-          <div className="p-6 rounded-2xl border">
-            <div className="flex items-center">
-              <div className="p-3 rounded-xl mr-4 bg-indigo-100">
-                {phase === "PREP" && <Eye className="w-6 h-6 text-indigo-600" />}
-                {phase === "RECORDING" && <Mic className="w-6 h-6 text-red-600" />}
-                {phase === "PROCESSING" && <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />}
-              </div>
-
-              <div>
-                <span className="text-xs opacity-70">Current Phase</span>
-                <span className="block text-xl font-bold">
-                  {phase === "PREP" ? "READING" : 
-                   phase === "RECORDING" ? "SPEAK NOW" : "ANALYZING..."}
-                </span>
-              </div>
-            </div>
-
-            {phase !== "PROCESSING" && (
-              <div className="mt-4 text-right text-4xl font-mono">
-                00:{timeLeft.toString().padStart(2, "0")}
-              </div>
-            )}
-          </div>
-
-          {phase === "PREP" && (
-            <div className="p-4 bg-gray-100 rounded-xl flex text-sm">
-              <AlertTriangle className="w-5 h-5 text-amber-500 mr-3" />
-              <p>Prepare your answer. Recording will start automatically.</p>
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT — VISUALIZER */}
-        <div className={`flex flex-col items-center justify-center p-8 rounded-3xl h-[400px] relative border ${phase === "RECORDING" ? "bg-black text-white" : "bg-gray-100"}`}>
-          {phase === "RECORDING" && (
-            <Visualizer stream={mediaStream} isRecording={true} />
-          )}
-        </div>
+      <div className="mt-8 h-[250px] bg-gray-100 rounded-xl flex items-center justify-center">
+        {phase === "RECORDING" && <Visualizer stream={mediaStream} isRecording={true} />}
       </div>
     </div>
   );
