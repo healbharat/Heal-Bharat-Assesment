@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Question, EvaluationResult } from '../types';
 import { evaluateAnswer } from '../services/gemini';
@@ -20,20 +19,16 @@ type Phase = 'PREP' | 'RECORDING' | 'PROCESSING' | 'DICTATION_PLAY' | 'DICTATION
 const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComplete, onBlock }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>('PREP');
-  
   const [timeLeft, setTimeLeft] = useState(READ_DURATION);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [results, setResults] = useState<EvaluationResult[]>([]);
-  
-  // Security State
   const [warnings, setWarnings] = useState(0);
 
-  // Dictation State
+  // Dictation state
   const [audioPlayed, setAudioPlayed] = useState(false);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
-  // Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -43,468 +38,528 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({ questions, onComp
   const currentQuestion = questions[currentIndex];
   const isDictation = currentQuestion?.type === 'DICTATION';
 
-  // --- INITIALIZATION & SECURITY ---
+  /* ============================================
+     AUDIO PLAYER — FINAL ROBUST VERSION
+  ============================================= */
+
+  const handlePlayAudio = async () => {
+    if (audioPlayed || !currentQuestion?.audioBase64) return;
+
+    setIsPlayingAudio(true);
+    console.log("🔊 Starting audio playback...");
+    console.log("Base64 length:", currentQuestion.audioBase64.length);
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+
+      // Convert base64 → ArrayBuffer
+      const binary = atob(currentQuestion.audioBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const arrayBuffer = bytes.buffer;
+
+      /* ---------- TRY #1: decodeAudioData (BEST) ---------- */
+      try {
+        console.log("Trying decodeAudioData...");
+        const buffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+
+        const src = audioCtx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(audioCtx.destination);
+        src.onended = () => {
+          setIsPlayingAudio(false);
+          setAudioPlayed(true);
+          setPhase("DICTATION_TYPE");
+        };
+        src.start(0);
+        console.log("decodeAudioData success!");
+        return;
+      } catch (e) {
+        console.warn("decodeAudioData failed:", e);
+      }
+
+      /* ---------- TRY #2: decodePCM (RAW PCM fallback) ---------- */
+      try {
+        console.log("Trying decodePCM fallback...");
+        const pcmBuffer = decodePCM(bytes, audioCtx, 24000);
+        playAudioBuffer(pcmBuffer, audioCtx, () => {
+          setIsPlayingAudio(false);
+          setAudioPlayed(true);
+          setPhase("DICTATION_TYPE");
+        });
+        console.log("decodePCM success!");
+        return;
+      } catch (e) {
+        console.warn("decodePCM failed:", e);
+      }
+
+      /* ---------- TRY #3: Blob → HTMLAudioElement fallback (ALWAYS WORKS) ---------- */
+      try {
+        console.log("Trying HTMLAudioElement fallback...");
+        const blob = new Blob([bytes], { type: "audio/wav" });
+        const url = URL.createObjectURL(blob);
+
+        const audio = new Audio(url);
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          setIsPlayingAudio(false);
+          setAudioPlayed(true);
+          setPhase("DICTATION_TYPE");
+        };
+
+        await audio.play();
+        console.log("HTMLAudioElement playback success!");
+        return;
+      } catch (e) {
+        console.error("Final fallback failed:", e);
+      }
+
+      throw new Error("No playback method succeeded");
+
+    } catch (e) {
+      console.error("FINAL AUDIO ERROR:", e);
+      alert("Audio failed to play. (Check console logs)");
+      setIsPlayingAudio(false);
+      setAudioPlayed(true);
+    }
+  };
+  /* ============================================
+       SECURITY VIOLATION HANDLER
+  ============================================= */
+
+  const handleSecurityViolation = () => {
+    setWarnings(prev => {
+      const newCount = prev + 1;
+
+      if (newCount === 1) {
+        alert("⚠️ WARNING (1/2): You minimized or switched the tab. One more violation will block you.");
+      } else if (newCount >= 2) {
+        onBlock();
+      }
+
+      return newCount;
+    });
+  };
+
+  /* ============================================
+       INIT MEDIA (Camera + Mic)
+  ============================================= */
+
+  const initMedia = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true
+      });
+
+      setMediaStream(stream);
+      mediaStreamRef.current = stream;
+    } catch (err) {
+      console.error("Media Permission Error:", err);
+      alert("Camera + Microphone access required. Please allow permissions.");
+    }
+  };
+
+  /* ============================================
+       INITIALIZATION EFFECT
+  ============================================= */
 
   useEffect(() => {
     initMedia();
 
-    // Visibility / Anti-Cheat Listener
-    const handleVisibilityChange = () => {
-        if (document.hidden) {
-            handleSecurityViolation();
-        }
+    const handleVis = () => {
+      if (document.hidden) handleSecurityViolation();
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVis);
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      }
+      document.removeEventListener("visibilitychange", handleVis);
+      mediaStreamRef.current?.getTracks().forEach(t => t.stop());
       if (timerRef.current) clearInterval(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSecurityViolation = () => {
-      setWarnings(prev => {
-          const newCount = prev + 1;
-          if (newCount === 1) {
-              alert("WARNING (1/2): Screen minimization detected.\n\nDo not switch tabs or minimize the browser. One more violation will permanently BLOCK you from this assessment.");
-          } else if (newCount >= 2) {
-              // Block User
-              onBlock();
-          }
-          return newCount;
-      });
-  };
-
-  const initMedia = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        setMediaStream(stream);
-        mediaStreamRef.current = stream; 
-      } catch (err) {
-          console.error("Media Error:", err);
-          alert("Camera and Microphone access is MANDATORY. Please enable permissions and refresh.");
-      }
-  };
+  /* ============================================
+       VIDEO ELEMENT SYNC
+  ============================================= */
 
   useEffect(() => {
     if (videoRef.current && mediaStream) {
-        videoRef.current.srcObject = mediaStream;
+      videoRef.current.srcObject = mediaStream;
     }
   }, [mediaStream]);
 
-  // --- QUESTION FLOW MANAGEMENT ---
+  /* ============================================
+       QUESTION SWITCH HANDLING
+  ============================================= */
 
   useEffect(() => {
-    // Reset state for new question
     setAudioPlayed(false);
-    setTypedAnswer('');
+    setTypedAnswer("");
     setIsPlayingAudio(false);
 
     if (isDictation) {
-        setPhase('DICTATION_PLAY');
-        setTimeLeft(60); // 60 seconds to listen and type
-        if (timerRef.current) clearInterval(timerRef.current);
+      setPhase("DICTATION_PLAY");
+      setTimeLeft(60);
+      if (timerRef.current) clearInterval(timerRef.current);
     } else {
-        startPrepPhase();
+      startPrepPhase();
     }
-    
+
     return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
 
-  // --- VERBAL LOGIC ---
+  /* ============================================
+       PHASE: PREP → RECORDING TIMER
+  ============================================= */
 
   const startPrepPhase = () => {
-      setPhase('PREP');
-      setTimeLeft(READ_DURATION);
-      
-      if (timerRef.current) clearInterval(timerRef.current);
+    setPhase("PREP");
+    setTimeLeft(READ_DURATION);
 
-      timerRef.current = window.setInterval(() => {
-        setTimeLeft((prev) => {
-            if (prev <= 1) {
-                clearInterval(timerRef.current!);
-                startRecordingPhase(); 
-                return 0;
-            }
-            return prev - 1;
-        });
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    timerRef.current = window.setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!);
+          startRecordingPhase();
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
   };
 
+  /* ============================================
+       START RECORDING
+  ============================================= */
+
   const startRecordingPhase = () => {
-    setPhase('RECORDING');
+    setPhase("RECORDING");
     setTimeLeft(RECORD_DURATION);
 
-    if (!mediaStreamRef.current) {
-        console.error("No stream available");
-        return; 
-    }
-    
-    // Check supported types
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+    if (!mediaStreamRef.current) return;
 
-    const mediaRecorder = new MediaRecorder(mediaStreamRef.current, { mimeType });
-    mediaRecorderRef.current = mediaRecorder;
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : "audio/mp4";
+
+    const recorder = new MediaRecorder(mediaStreamRef.current, { mimeType });
+
+    mediaRecorderRef.current = recorder;
     chunksRef.current = [];
 
-    mediaRecorder.ondataavailable = (e) => {
+    recorder.ondataavailable = e => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
 
-    mediaRecorder.start();
-    
+    recorder.start();
+
     if (timerRef.current) clearInterval(timerRef.current);
+
     timerRef.current = window.setInterval(() => {
-        setTimeLeft((prev) => {
-            if (prev <= 1) {
-                stopRecording();
-                return 0;
-            }
-            return prev - 1;
-        });
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          stopRecording();
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
   };
 
+  /* ============================================
+       STOP RECORDING
+  ============================================= */
+
   const stopRecording = () => {
     if (timerRef.current) clearInterval(timerRef.current);
-    
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-      setPhase('PROCESSING');
-      
-      mediaRecorderRef.current.onstop = async () => {
-        const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
-        const blob = new Blob(chunksRef.current, { type: mimeType }); 
-        await processVerbalAnswer(blob, mimeType);
-      };
-    }
+
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+
+    recorder.stop();
+    setPhase("PROCESSING");
+
+    recorder.onstop = async () => {
+      const mimeType = recorder.mimeType || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      await processVerbalAnswer(blob, mimeType);
+    };
   };
+
+  /* ============================================
+       PROCESS VERBAL ANSWER
+  ============================================= */
 
   const processVerbalAnswer = async (audioBlob: Blob, mimeType: string) => {
     try {
       const base64Audio = await blobToBase64(audioBlob);
       const evaluation = await evaluateAnswer(currentQuestion, base64Audio, mimeType);
+
       handleResult(evaluation);
-    } catch (error) {
-        console.error("Evaluation failed", error);
-        alert(`Error processing answer: ${error instanceof Error ? error.message : "Unknown Error"}`);
-        // Skip on error
-        const emptyResult: EvaluationResult = {
-            questionId: currentQuestion.id,
-            transcription: "Error processing audio",
-            overallScore: 0,
-            clarity: { score: 0, reasoning: "Error" },
-            confidence: { score: 0, reasoning: "Error" },
-            contentQuality: { score: 0, reasoning: "Error" },
-            grammarAndFluency: { score: 0, reasoning: "Error" },
-            keyTakeaways: [],
-            improvementTips: []
-        };
-        handleResult(emptyResult);
+    } catch (err) {
+      console.error("Verbal Evaluation Error:", err);
+
+      const empty: EvaluationResult = {
+        questionId: currentQuestion.id,
+        transcription: "Audio processing error",
+        overallScore: 0,
+        clarity: { score: 0, reasoning: "Error" },
+        confidence: { score: 0, reasoning: "Error" },
+        contentQuality: { score: 0, reasoning: "Error" },
+        grammarAndFluency: { score: 0, reasoning: "Error" },
+        keyTakeaways: [],
+        improvementTips: []
+      };
+
+      handleResult(empty);
     }
   };
 
-  // --- DICTATION LOGIC ---
-
-  const handlePlayAudio = async () => {
-      if (audioPlayed || !currentQuestion.audioBase64) return;
-      
-      setIsPlayingAudio(true);
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      
-      try {
-          if (audioCtx.state === 'suspended') {
-              await audioCtx.resume();
-          }
-
-          // Decode Base64 string to ArrayBuffer
-          const binaryString = atob(currentQuestion.audioBase64);
-          const len = binaryString.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-          }
-          
-          // Decode Audio Data using manual PCM decoding (Gemini returns 24kHz raw PCM)
-          // Do NOT use audioCtx.decodeAudioData as it expects WAV/MP3 headers
-          const audioBuffer = decodePCM(bytes, audioCtx, 24000);
-
-          playAudioBuffer(audioBuffer, audioCtx, () => {
-              setIsPlayingAudio(false);
-              setAudioPlayed(true);
-              setPhase('DICTATION_TYPE');
-          });
-      } catch (e) {
-          console.error("Audio Play Error", e);
-          alert("Failed to play audio. Error decoding data.");
-          setIsPlayingAudio(false);
-          setAudioPlayed(true); // Prevent stuck state
-      }
-  };
+  /* ============================================
+       DICTATION — SUBMIT ANSWER
+  ============================================= */
 
   const submitDictation = () => {
-      // Calculate Score: Simple text similarity (Levenshtein-ish or word overlap)
-      const target = currentQuestion.text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g,"");
-      const input = typedAnswer.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g,"");
-      
-      const targetWords = target.split(/\s+/);
-      const inputWords = input.split(/\s+/);
-      
-      let matches = 0;
-      inputWords.forEach(w => {
-          if (targetWords.includes(w)) matches++;
-      });
-      
-      // Calculate Percentage
-      let score = Math.round((matches / targetWords.length) * 100);
-      if (score > 100) score = 100;
+    const target = currentQuestion.text
+      .toLowerCase()
+      .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "");
 
-      const result: EvaluationResult = {
-        questionId: currentQuestion.id,
-        transcription: typedAnswer,
-        overallScore: score,
-        clarity: { score: score, reasoning: "N/A for Dictation" },
-        confidence: { score: score, reasoning: "N/A for Dictation" },
-        contentQuality: { score: score, reasoning: `Matched ${matches}/${targetWords.length} words.` },
-        grammarAndFluency: { score: score, reasoning: "N/A for Dictation" },
-        keyTakeaways: ["Listening Accuracy"],
-        improvementTips: ["Practice typing faster"]
-      };
+    const input = typedAnswer
+      .toLowerCase()
+      .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "");
 
-      handleResult(result);
+    const tw = target.split(/\s+/);
+    const iw = input.split(/\s+/);
+
+    let matches = 0;
+    iw.forEach(w => {
+      if (tw.includes(w)) matches++;
+    });
+
+    let score = Math.round((matches / tw.length) * 100);
+    if (score > 100) score = 100;
+
+    const result: EvaluationResult = {
+      questionId: currentQuestion.id,
+      transcription: typedAnswer,
+      overallScore: score,
+      clarity: { score: score, reasoning: "Dictation" },
+      confidence: { score: score, reasoning: "Dictation" },
+      contentQuality: { score: score, reasoning: `Matched ${matches}/${tw.length} words` },
+      grammarAndFluency: { score: score, reasoning: "Dictation" },
+      keyTakeaways: ["Listening Accuracy"],
+      improvementTips: ["Improve listening clarity"]
+    };
+
+    handleResult(result);
   };
 
-  // --- SHARED COMPLETION ---
+  /* ============================================
+       SHARED RESULT HANDLER
+  ============================================= */
 
   const handleResult = (result: EvaluationResult) => {
-      const newResults = [...results, result];
-      setResults(newResults);
+    const newList = [...results, result];
+    setResults(newList);
 
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-      } else {
-        onComplete(newResults);
-      }
+    if (currentIndex < questions.length - 1) {
+      setCurrentIndex(i => i + 1);
+    } else {
+      onComplete(newList);
+    }
   };
+  /* ============================================================
+        AUDIO PLAY (DICTATION FIXED VERSION)
+     ============================================================ */
+
+  const handlePlayAudio = async () => {
+    if (audioPlayed || !currentQuestion.audioBase64) return;
+
+    setIsPlayingAudio(true);
+
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume();
+      }
+
+      // Base64 → Bytes
+      const binary = atob(currentQuestion.audioBase64);
+      const bytes = new Uint8Array(binary.length);
+
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      // Gemini returns RAW PCM → decode manually
+      const audioBuffer = decodePCM(bytes, audioCtx, 24000);
+
+      playAudioBuffer(audioBuffer, audioCtx, () => {
+        setIsPlayingAudio(false);
+        setAudioPlayed(true);
+        setPhase("DICTATION_TYPE");
+      });
+
+    } catch (err) {
+      console.error("Audio Play Error:", err);
+      alert("Failed to decode/play the audio.");
+      setIsPlayingAudio(false);
+      setAudioPlayed(true);
+    }
+  };
+
+
+  /* ============================================================
+        JSX RETURN (FULL FINAL UI)
+     ============================================================ */
 
   return (
     <div className="max-w-6xl mx-auto w-full px-6 h-full flex flex-col justify-center relative font-sans">
-        
-        {/* Floating Camera Circle */}
-        <div className="fixed bottom-6 right-6 z-50">
-             <div className="w-32 h-32 rounded-full border-4 border-indigo-600 shadow-2xl overflow-hidden bg-black relative hover:scale-105 transition-transform duration-300">
-                 {mediaStream ? (
-                     <video 
-                        ref={videoRef} 
-                        autoPlay 
-                        muted 
-                        className="w-full h-full object-cover transform scale-x-[-1]" 
-                     />
-                 ) : (
-                     <div className="flex items-center justify-center h-full text-white bg-slate-900">
-                         <Camera className="w-8 h-8 opacity-50" />
-                     </div>
-                 )}
-             </div>
-             <p className="text-center text-xs text-indigo-900 font-bold mt-2 uppercase tracking-wider bg-white/80 backdrop-blur px-2 py-1 rounded-full border border-slate-200 inline-block absolute left-1/2 -translate-x-1/2 whitespace-nowrap">
-                Live Feed
-             </p>
+
+      {/* CAMERA BUBBLE */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <div className="w-32 h-32 rounded-full border-4 border-indigo-600 shadow-2xl overflow-hidden bg-black">
+          {mediaStream ? (
+            <video ref={videoRef} autoPlay muted className="w-full h-full object-cover scale-x-[-1]" />
+          ) : (
+            <div className="flex items-center justify-center h-full text-white bg-slate-900">
+              <Camera className="w-8 h-8 opacity-50" />
+            </div>
+          )}
+        </div>
+        <p className="text-center mt-2 text-xs text-indigo-900 font-bold bg-white px-2 py-1 rounded-full border">
+          Live Feed
+        </p>
+      </div>
+
+      {/* HEADER */}
+      <div className="mb-8">
+        <div className="flex justify-between items-end mb-4">
+          <div>
+            <span className={`px-2 py-1 rounded-md text-xs font-bold ${
+              isDictation ? "bg-purple-100 text-purple-700" : "bg-indigo-100 text-indigo-600"
+            }`}>
+              {isDictation ? "Audio Dictation Test" : "Verbal Assessment"}
+            </span>
+
+            <h2 className="text-3xl font-extrabold text-slate-900 mt-2">
+              Question {currentIndex + 1} / {questions.length}
+            </h2>
+          </div>
+
+          {/* Warning counter */}
+          <div className="flex flex-col items-end">
+            <div className="flex text-sm items-center bg-slate-100 px-3 py-1.5 rounded-lg">
+              <ShieldAlert className={`w-4 h-4 ${warnings > 0 ? "text-red-500" : "text-slate-400"}`} />
+              <span className="ml-2 font-medium">Warnings:  
+                <span className={warnings > 0 ? "text-red-600 font-bold ml-1" : "text-green-600 ml-1"}>
+                  {warnings}/2
+                </span>
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* Header */}
-        <div className="mb-8">
-             <div className="flex justify-between items-end mb-4">
-                 <div>
-                     <span className={`font-bold text-xs uppercase tracking-wider px-2 py-1 rounded-md ${isDictation ? 'bg-purple-100 text-purple-700' : 'bg-indigo-50 text-indigo-600'}`}>
-                         {isDictation ? 'Audio Dictation Test' : 'Verbal Assessment'}
-                     </span>
-                     <h2 className="text-3xl font-extrabold text-slate-900 mt-2">Question {currentIndex + 1} / {questions.length}</h2>
-                 </div>
-                 <div className="flex flex-col items-end">
-                     {phase === 'RECORDING' && (
-                         <div className="flex items-center space-x-2 text-red-600 animate-pulse mb-2 bg-red-50 px-3 py-1 rounded-full">
-                             <div className="w-2 h-2 bg-red-600 rounded-full"></div>
-                             <span className="font-bold uppercase tracking-widest text-xs">Recording Active</span>
-                         </div>
-                     )}
-                     <div className="flex items-center space-x-2 text-sm font-medium bg-slate-100 px-3 py-1.5 rounded-lg">
-                        <ShieldAlert className={`w-4 h-4 ${warnings > 0 ? 'text-red-500' : 'text-slate-400'}`} />
-                        <span className="text-slate-600">Warnings: <span className={`${warnings > 0 ? 'text-red-600 font-bold' : 'text-green-600'}`}>{warnings}/2</span></span>
-                     </div>
-                 </div>
-             </div>
-            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                <div 
-                    className={`h-2 rounded-full transition-all duration-500 ${isDictation ? 'bg-purple-600' : 'bg-indigo-600'}`} 
-                    style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
-                ></div>
-            </div>
+        {/* Progress Bar */}
+        <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+          <div
+            className={`h-2 ${
+              isDictation ? "bg-purple-600" : "bg-indigo-600"
+            }`}
+            style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+          />
+        </div>
+      </div>
+
+
+      {/* CONDITIONAL RENDER: DICTATION OR VERBAL */}
+      {isDictation ? (
+        /* ================= DICTATION UI ================= */
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+
+          {/* LEFT CARD — Audio Play */}
+          <div className="bg-white p-8 rounded-3xl border shadow-xl">
+            <h3 className="text-xl font-bold mb-4 flex items-center text-purple-700">
+              <Volume2 className="w-6 h-6 mr-2" /> Dictation Audio
+            </h3>
+
+            <button
+              onClick={handlePlayAudio}
+              disabled={audioPlayed || isPlayingAudio}
+              className={`w-full py-8 rounded-xl border-2 text-lg font-bold transition ${
+                audioPlayed ? "bg-slate-100 text-slate-500" :
+                "bg-purple-50 text-purple-700 hover:bg-purple-100"
+              }`}
+            >
+              {isPlayingAudio ? "Playing..." : audioPlayed ? "Played" : "Play Audio (One Chance)"}
+            </button>
+          </div>
+
+          {/* RIGHT CARD — Typing Box */}
+          <div className="bg-slate-50 p-8 rounded-3xl border shadow-xl flex flex-col">
+            <textarea
+              disabled={!audioPlayed}
+              value={typedAnswer}
+              onChange={(e) => setTypedAnswer(e.target.value)}
+              className="w-full h-64 p-6 border rounded-xl text-lg outline-none"
+              placeholder="Start typing what you heard..."
+            />
+
+            <button
+              onClick={submitDictation}
+              disabled={typedAnswer.trim().length < 3}
+              className="mt-6 py-4 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl"
+            >
+              Submit Dictation
+            </button>
+          </div>
         </div>
 
-        {isDictation ? (
-            /* --- DICTATION UI --- */
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-stretch">
-                <div className="flex flex-col space-y-6">
-                    <div className="bg-white p-8 rounded-[2rem] shadow-xl border border-slate-200 flex-grow relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-2 h-full bg-purple-600"></div>
-                        <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center">
-                            <Volume2 className="w-6 h-6 mr-2 text-purple-600" />
-                            Listening Test
-                        </h3>
-                        <p className="text-slate-600 text-lg leading-relaxed mb-8">
-                            Listen to the audio clip exactly <strong>once</strong> and type what you hear in the box provided. Accuracy is key.
-                        </p>
-                        
-                        <div className="flex justify-center">
-                            <button
-                                onClick={handlePlayAudio}
-                                disabled={audioPlayed || isPlayingAudio}
-                                className={`w-full py-8 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
-                                    audioPlayed 
-                                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                                    : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 hover:scale-[1.02] cursor-pointer'
-                                }`}
-                            >
-                                {isPlayingAudio ? (
-                                    <>
-                                        <Loader2 className="w-10 h-10 mb-2 animate-spin" />
-                                        <span className="font-bold">Playing... Listen carefully!</span>
-                                    </>
-                                ) : audioPlayed ? (
-                                    <>
-                                        <Volume2 className="w-10 h-10 mb-2" />
-                                        <span className="font-bold">Audio Played</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Play className="w-12 h-12 mb-2 fill-current" />
-                                        <span className="font-bold text-lg">Play Audio (1 Attempt)</span>
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+      ) : (
+        /* ================= VERBAL UI ================= */
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
 
-                <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200 flex flex-col">
-                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center">
-                        <Type className="w-4 h-4 mr-2" />
-                        Type your answer below
-                    </label>
-                    <textarea 
-                        className="w-full flex-grow p-6 rounded-xl border border-slate-300 focus:ring-4 focus:ring-purple-100 focus:border-purple-500 outline-none text-lg resize-none shadow-inner"
-                        placeholder="Waiting for audio..."
-                        disabled={!audioPlayed && !isPlayingAudio}
-                        value={typedAnswer}
-                        onChange={(e) => setTypedAnswer(e.target.value)}
-                    ></textarea>
-                    
-                    <button 
-                        onClick={submitDictation}
-                        disabled={typedAnswer.length < 5}
-                        className="mt-6 w-full py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center"
-                    >
-                        Submit Answer <ArrowRight className="w-5 h-5 ml-2" />
-                    </button>
-                </div>
-            </div>
-        ) : (
-            /* --- VERBAL UI (Existing) --- */
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-stretch">
-                {/* Question Text */}
-                <div className="space-y-6 flex flex-col">
-                    <div className="bg-white p-10 rounded-[2rem] shadow-xl border border-slate-200 flex-grow flex items-center relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-2 h-full bg-indigo-600"></div>
-                        <p className="text-3xl font-medium text-slate-800 leading-snug">
-                            {currentQuestion.text}
-                        </p>
-                    </div>
-                    
-                    <div className={`flex items-center justify-between p-6 rounded-2xl border-2 transition-all duration-500 ${
-                        phase === 'PREP' ? 'bg-amber-50/50 text-amber-900 border-amber-100' :
-                        phase === 'RECORDING' ? 'bg-red-50/50 text-red-900 border-red-100 shadow-red-100 shadow-lg' :
-                        'bg-indigo-50/50 text-indigo-900 border-indigo-100'
-                    }`}>
-                        <div className="flex items-center">
-                            <div className={`p-3 rounded-xl mr-4 ${
-                                phase === 'PREP' ? 'bg-amber-100 text-amber-600' :
-                                phase === 'RECORDING' ? 'bg-red-100 text-red-600 animate-pulse' :
-                                'bg-indigo-100 text-indigo-600'
-                            }`}>
-                                {phase === 'PREP' && <Eye className="w-6 h-6" />}
-                                {phase === 'RECORDING' && <Mic className="w-6 h-6" />}
-                                {phase === 'PROCESSING' && <Loader2 className="w-6 h-6 animate-spin" />}
-                            </div>
-                            
-                            <div>
-                                <span className="block text-xs font-bold uppercase tracking-wider opacity-70">Current Phase</span>
-                                <span className="font-bold text-xl">
-                                    {phase === 'PREP' ? 'READING TIME' : 
-                                     phase === 'RECORDING' ? 'SPEAK NOW' : 'ANALYZING...'}
-                                </span>
-                            </div>
-                        </div>
-                        
-                        {phase !== 'PROCESSING' && (
-                            <div className="text-right">
-                                 <span className="block text-xs font-bold uppercase tracking-wider opacity-70">Time Remaining</span>
-                                 <div className="font-mono text-4xl font-bold tracking-tight">
-                                    00:{timeLeft.toString().padStart(2, '0')}
-                                 </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
+          {/* LEFT — QUESTION */}
+          <div className="bg-white p-10 rounded-3xl shadow-xl border">
+            <p className="text-2xl font-semibold">{currentQuestion.text}</p>
+          </div>
 
-                {/* Visualizer & Status */}
-                <div className={`flex flex-col items-center justify-center p-8 rounded-[2rem] relative overflow-hidden h-[400px] transition-all duration-500 shadow-inner ${
-                    phase === 'RECORDING' ? 'bg-slate-900 shadow-2xl scale-[1.02]' : 'bg-slate-100 border-2 border-dashed border-slate-300'
-                }`}>
-                    
-                    {phase === 'RECORDING' && (
-                        <div className="absolute inset-0 opacity-30">
-                             <Visualizer stream={mediaStream} isRecording={true} />
-                        </div>
-                    )}
-                    
-                    <div className="relative z-10 flex flex-col items-center text-center">
-                        {phase === 'PROCESSING' ? (
-                             <>
-                                <div className="w-20 h-20 rounded-full bg-indigo-50 flex items-center justify-center mb-6">
-                                    <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-                                </div>
-                                <h3 className="text-xl font-bold text-indigo-900 mb-2">Analyzing Response</h3>
-                                <p className="text-indigo-700/70">Please wait while AI evaluates your answer...</p>
-                             </>
-                        ) : phase === 'RECORDING' ? (
-                            <>
-                                <div className="w-24 h-24 rounded-full bg-red-500/10 flex items-center justify-center mb-6 animate-pulse">
-                                    <Mic className="w-12 h-12 text-red-500" />
-                                </div>
-                                <h3 className="text-2xl font-bold text-white mb-2">Microphone Active</h3>
-                                <p className="text-slate-400">Speak clearly and confidently</p>
-                            </>
-                        ) : (
-                            <>
-                                <div className="w-24 h-24 rounded-full bg-slate-200 flex items-center justify-center mb-6 shadow-sm">
-                                    <span className="text-4xl">📖</span>
-                                </div>
-                                <h3 className="text-2xl font-bold text-slate-700 mb-2">Reading Phase</h3>
-                                <p className="text-slate-500">Microphone is OFF</p>
-                            </>
-                        )}
-                    </div>
+          {/* RIGHT — RECORDING VISUAL */}
+          <div className="bg-slate-900 p-10 rounded-3xl shadow-xl text-center text-white relative">
+
+            {phase === "RECORDING" ? (
+              <>
+                <div className="mb-6">
+                  <Mic className="w-12 h-12 text-red-400 animate-pulse mx-auto" />
                 </div>
-            </div>
-        )}
+                <p className="text-2xl font-bold mb-2">Recording...</p>
+                <p className="text-slate-400">Time Left: {timeLeft}s</p>
+              </>
+            ) : phase === "PROCESSING" ? (
+              <>
+                <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" />
+                <p className="text-xl">Analyzing Response...</p>
+              </>
+            ) : (
+              <>
+                <Eye className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+                <p className="text-xl font-bold">Reading Time</p>
+                <p className="text-slate-400">Time Left: {timeLeft}s</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
