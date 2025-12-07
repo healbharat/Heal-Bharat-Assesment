@@ -122,7 +122,7 @@ app.post('/api/block', async (req, res) => {
         const existing = await BlockedUser.findOne({ email });
         if (existing) {
             return res.json({ message: 'User already blocked' });
-        }
+        } 
 
         const blockedUser = new BlockedUser({
             name,
