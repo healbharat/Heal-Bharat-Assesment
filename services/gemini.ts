@@ -1,15 +1,15 @@
-
+// BACKEND VERSION OF GEMINI SERVICE
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Question, EvaluationResult } from "../types";
 
-// Helper to get API key safely
-const getApiKey = () => process.env.API_KEY || '';
+// Get API Key safely (Render → Environment Variable `API_KEY`)
+const ai = new GoogleGenAI({
+  apiKey: process.env.API_KEY || ""
+});
 
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
-
-/**
- * Converts text to speech using Gemini TTS.
- */
+/* -------------------------------------------------------
+   TEXT → SPEECH (Dictation Audio Generation)
+------------------------------------------------------- */
 export const speakText = async (text: string): Promise<string | null> => {
   try {
     const response = await ai.models.generateContent({
@@ -19,33 +19,36 @@ export const speakText = async (text: string): Promise<string | null> => {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
+            prebuiltVoiceConfig: { voiceName: "Kore" },
           },
         },
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    return base64Audio || null;
-  } catch (error) {
-    console.error("TTS Error:", error);
+    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+  } catch (err) {
+    console.error("TTS Error:", err);
     return null;
   }
 };
 
-/**
- * Generates a list of interview questions based on topic and difficulty.
- * Updated to include 3 Dictation Questions followed by Verbal Questions.
- */
-export const generateQuestions = async (topic: string, difficulty: string, count: number = 3): Promise<Question[]> => {
+/* -------------------------------------------------------
+   GENERATE INTERVIEW QUESTIONS (Dictation + Verbal)
+------------------------------------------------------- */
+export const generateQuestions = async (
+  topic: string,
+  difficulty: string,
+  count: number = 3
+): Promise<Question[]> => {
   try {
-    // 1. Generate Dictation Sentences (Word Play)
-    const dictationPrompt = `Generate 3 complex sentences for a listening skills test. 
-    Topic: ${topic}. Difficulty: ${difficulty}.
-    The sentences should be professional but challenging (e.g., specific terminology or tongue twisters).
-    Return ONLY a JSON array of strings. Example: ["Sentence 1", "Sentence 2", "Sentence 3"]`;
+    /* ---------- 1. DICTATION SENTENCES ---------- */
+    const dictationPrompt = `
+      Generate 3 challenging dictation sentences.
+      Topic: ${topic}, Difficulty: ${difficulty}.
+      Return ONLY JSON array of strings.
+    `;
 
-    const dictationResponse = await ai.models.generateContent({
+    const dictResponse = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: dictationPrompt,
       config: {
@@ -56,32 +59,32 @@ export const generateQuestions = async (topic: string, difficulty: string, count
         }
       }
     });
-    
-    const dictationTexts = JSON.parse(dictationResponse.text || "[]") as string[];
 
-    // 2. Generate Audio for Dictation Sentences
+    const dictationTexts = JSON.parse(dictResponse.text || "[]");
+
     const dictationQuestions: Question[] = [];
+
     for (let i = 0; i < dictationTexts.length; i++) {
-        const audio = await speakText(dictationTexts[i]);
-        if (audio) {
-            dictationQuestions.push({
-                id: `dict-${i}`,
-                type: 'DICTATION',
-                text: dictationTexts[i],
-                difficulty: 'Hard',
-                audioBase64: audio
-            });
-        }
+      const audio = await speakText(dictationTexts[i]);
+      dictationQuestions.push({
+        id: `dict-${i}`,
+        type: "DICTATION",
+        text: dictationTexts[i],
+        difficulty: "Medium",
+        audioBase64: audio || ""
+      });
     }
 
-    // 3. Generate Verbal Questions
-    const verbalCount = count; // Keep original count for verbal
-    const response = await ai.models.generateContent({
+    /* ---------- 2. VERBAL QUESTIONS ---------- */
+    const verbalPrompt = `
+      Generate ${count} verbal interview questions for internship.
+      Topic: ${topic}, Difficulty: ${difficulty}
+      Return JSON array with: { id, text, difficulty }
+    `;
+
+    const verbalResp = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Generate ${verbalCount} interview questions for an intern position focusing on "${topic}". 
-      Difficulty level: ${difficulty}. 
-      The questions should assess verbal communication skills, critical thinking, and professional demeanor.
-      Return the response in JSON format.`,
+      contents: verbalPrompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -91,41 +94,46 @@ export const generateQuestions = async (topic: string, difficulty: string, count
             properties: {
               id: { type: Type.STRING },
               text: { type: Type.STRING },
-              difficulty: { type: Type.STRING, enum: ['Easy', 'Medium', 'Hard'] },
-              context: { type: Type.STRING },
+              difficulty: { type: Type.STRING }
             },
-            required: ["id", "text", "difficulty"],
-          },
-        },
-      },
+            required: ["id", "text", "difficulty"]
+          }
+        }
+      }
     });
 
-    const verbalTexts = JSON.parse(response.text || "[]") as any[];
-    const verbalQuestions: Question[] = verbalTexts.map((q: any) => ({
-        ...q,
-        type: 'VERBAL'
-    }));
+    const verbalQuestions = JSON.parse(verbalResp.text || "[]")
+      .map((q: any) => ({ ...q, type: "VERBAL" }));
 
-    // Combine: Dictation First, then Verbal
     return [...dictationQuestions, ...verbalQuestions];
 
   } catch (error) {
-    console.error("Error generating questions:", error);
-    // Fallback questions if API fails
+    console.error("❌ Question Generation Error:", error);
+
     return [
-      { id: 'd1', type: 'DICTATION', text: "The quick brown fox jumps over the lazy dog.", difficulty: 'Easy' },
-      { id: '1', type: 'VERBAL', text: "Tell me about a time you handled a difficult situation.", difficulty: 'Medium' }
+      {
+        id: "fallback-d1",
+        type: "DICTATION",
+        text: "The quick brown fox jumps over the lazy dog.",
+        difficulty: "Easy",
+      },
+      {
+        id: "fallback-v1",
+        type: "VERBAL",
+        text: "Tell me about yourself.",
+        difficulty: "Easy",
+      }
     ];
   }
 };
 
-/**
- * Analyzes the user's audio answer.
- */
+/* -------------------------------------------------------
+   AUDIO EVALUATION (Speech-to-Score)
+------------------------------------------------------- */
 export const evaluateAnswer = async (
   question: Question,
   audioBase64: string,
-  mimeType: string = 'audio/wav'
+  mimeType: string = "audio/webm"
 ): Promise<EvaluationResult> => {
   try {
     const response = await ai.models.generateContent({
@@ -133,16 +141,23 @@ export const evaluateAnswer = async (
       contents: {
         parts: [
           {
-            text: `You are an expert communication coach. Evaluate the following audio answer for the interview question: "${question.text}".
-            Analyze the speech for clarity, confidence, content quality, and grammar.
-            Provide a strict numerical score (0-100) and constructive feedback.
-            Transcribe the audio accurately.
-            
-            Return the result in JSON.`
+            text: `
+              Evaluate this answer for the question: "${question.text}".
+              Provide:
+              - transcription
+              - clarity.score & reasoning
+              - confidence.score & reasoning
+              - grammarAndFluency.score & reasoning
+              - contentQuality.score & reasoning
+              - overallScore (0-100)
+              - keyTakeaways[]
+              - improvementTips[]
+              Return ONLY JSON.
+            `
           },
           {
             inlineData: {
-              mimeType: mimeType, // e.g., 'audio/webm' or 'audio/wav'
+              mimeType,
               data: audioBase64
             }
           }
@@ -153,41 +168,34 @@ export const evaluateAnswer = async (
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            questionId: { type: Type.STRING },
             transcription: { type: Type.STRING },
             overallScore: { type: Type.NUMBER },
-            clarity: {
-              type: Type.OBJECT,
-              properties: { score: { type: Type.NUMBER }, reasoning: { type: Type.STRING } }
-            },
-            confidence: {
-              type: Type.OBJECT,
-              properties: { score: { type: Type.NUMBER }, reasoning: { type: Type.STRING } }
-            },
-            contentQuality: {
-              type: Type.OBJECT,
-              properties: { score: { type: Type.NUMBER }, reasoning: { type: Type.STRING } }
-            },
-            grammarAndFluency: {
-              type: Type.OBJECT,
-              properties: { score: { type: Type.NUMBER }, reasoning: { type: Type.STRING } }
-            },
-            keyTakeaways: { type: Type.ARRAY, items: { type: Type.STRING } },
-            improvementTips: { type: Type.ARRAY, items: { type: Type.STRING } }
+            clarity: { type: Type.OBJECT },
+            confidence: { type: Type.OBJECT },
+            grammarAndFluency: { type: Type.OBJECT },
+            contentQuality: { type: Type.OBJECT },
+            keyTakeaways: { type: Type.ARRAY },
+            improvementTips: { type: Type.ARRAY }
           },
-          required: ["overallScore", "clarity", "confidence", "transcription", "keyTakeaways", "improvementTips"]
+          required: [
+            "transcription",
+            "overallScore",
+            "clarity",
+            "confidence",
+            "grammarAndFluency",
+            "contentQuality",
+            "keyTakeaways",
+            "improvementTips"
+          ]
         }
       }
     });
 
-    const text = response.text;
-    if (!text) throw new Error("No evaluation returned");
-    const result = JSON.parse(text);
-    // Ensure the ID matches
+    const result = JSON.parse(response.text);
     result.questionId = question.id;
-    return result as EvaluationResult;
+    return result;
   } catch (error) {
-    console.error("Evaluation Error:", error);
+    console.error("❌ Evaluation Error:", error);
     throw error;
   }
 };
