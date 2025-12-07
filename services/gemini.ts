@@ -1,128 +1,94 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+/**
+ * ------------------------------------------------------------
+ *  FRONTEND GEMINI SERVICE (SAFE)
+ *  - No API Key on Frontend
+ *  - Uses Backend Proxy Endpoints:
+ *        POST /api/generate
+ *        POST /api/evaluate
+ *  - 100% Render + Vite Compatible
+ * ------------------------------------------------------------
+ */
+
 import type { Question, EvaluationResult } from "../types";
 
-// Load API Key from Vite Environment
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-// If missing key, show error in console
-if (!apiKey) {
-  console.error("❌ Missing Gemini API Key! Add VITE_GEMINI_API_KEY in Render Environment.");
-}
-
-// Initialize Gemini Client
-const genAI = new GoogleGenerativeAI(apiKey);
-
 /**
- * Generate Interview Questions
+ * Generate Interview Questions from Backend (Proxy)
  */
-// services/gemini.ts (frontend) - lightweight proxy client
-export const generateQuestions = async (topic: string, difficulty: string, count = 3) => {
+export const generateQuestions = async (
+  topic: string,
+  difficulty: string,
+  count: number = 3
+): Promise<Question[]> => {
   try {
-    const prompt = `Generate ${count} interview questions for an intern position focusing on "${topic}". Difficulty: ${difficulty}. Return JSON array of objects: { id, text, difficulty }. Return JSON ONLY.`;
-    const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL || ""}/api/generate`, {
+    const prompt = `
+      Generate ${count} interview questions for an intern role about "${topic}".
+      Difficulty: ${difficulty}.
+      Return ONLY JSON array: [{ "id": "", "text": "", "difficulty": "" }]
+    `;
+
+    const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, model: "text-bison-001" })
+      body: JSON.stringify({ prompt }),
     });
 
     if (!resp.ok) {
-      const txt = await resp.text();
-      throw new Error(`Backend generate failed: ${txt}`);
+      throw new Error(await resp.text());
     }
-    const json = await resp.json();
-    // backend returns { text, raw }
-    let text = json.text || "";
-    // try parse
+
+    const data = await resp.json(); // backend returns { text, raw }
+    const text = data.text || "";
+
+    // Try parsing JSON
     try {
-      const parsed = JSON.parse(text);
-      return parsed;
+      return JSON.parse(text);
     } catch {
-      // if model returned plain text list, try to fallback
-      // return fallback sample
-      console.warn("Could not parse model JSON, using fallback questions.");
+      console.warn("⚠ Invalid JSON returned. Using fallback.");
       return [
         { id: "1", text: "Tell me about yourself.", difficulty: "Easy" },
-        { id: "2", text: "Why do you want this internship?", difficulty: "Medium" },
-        { id: "3", text: "Describe a team project you worked on.", difficulty: "Medium" }
+        { id: "2", text: "Why are you applying for this internship?", difficulty: "Medium" },
+        { id: "3", text: "Describe a project you worked on.", difficulty: "Medium" }
       ];
     }
   } catch (err) {
-    console.error("Error generating questions:", err);
+    console.error("❌ Question Generation Error:", err);
     return [
       { id: "1", text: "Tell me about yourself.", difficulty: "Easy" },
-      { id: "2", text: "Why do you want this internship?", difficulty: "Medium" },
-      { id: "3", text: "Describe a team project you worked on.", difficulty: "Medium" }
+      { id: "2", text: "Why should we hire you?", difficulty: "Medium" },
+      { id: "3", text: "Describe a challenge you solved.", difficulty: "Hard" }
     ];
   }
 };
 
-export const evaluateAnswer = async (question: any, audioBase64: string, mimeType = "audio/webm") => {
-  try {
-    const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL || ""}/api/evaluate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, audioBase64, mimeType })
-    });
-    if (!resp.ok) {
-      const txt = await resp.text();
-      throw new Error(`Backend evaluate failed: ${txt}`);
-    }
-    const json = await resp.json();
-    // backend returns { result, raw }
-    return json.result;
-  } catch (err) {
-    console.error("Evaluation Error:", err);
-    throw err;
-  }
-};
-
-
 /**
- * Evaluate Audio Answer
+ * Evaluate Audio Answer via Backend (Proxy)
  */
 export const evaluateAnswer = async (
   question: Question,
   audioBase64: string,
-  mimeType: string
+  mimeType: string = "audio/webm"
 ): Promise<EvaluationResult> => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const resp = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/evaluate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question,
+        audioBase64,
+        mimeType
+      }),
+    });
 
-    const prompt = `
-      Evaluate the spoken answer for the interview question: "${question.text}".
-      Analyze:
-      - clarity
-      - confidence
-      - grammar
-      - content quality
-      Score out of 100.
-      Return ONLY valid JSON:
-      {
-        "transcription": "",
-        "overallScore": 0,
-        "clarity": { "score": 0, "reasoning": "" },
-        "confidence": { "score": 0, "reasoning": "" },
-        "grammarAndFluency": { "score": 0, "reasoning": "" },
-        "contentQuality": { "score": 0, "reasoning": "" },
-        "keyTakeaways": [],
-        "improvementTips": []
-      }
-    `;
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
 
-    const result = await model.generateContent([
-      { text: prompt },
-      {
-        inlineData: {
-          mimeType,
-          data: audioBase64,
-        },
-      },
-    ]);
+    const data = await resp.json(); // backend returns { result, raw }
+    const result = data.result;
 
-    const parsed = JSON.parse(result.response.text());
-    parsed.questionId = question.id;
+    result.questionId = question.id; // attach QID
 
-    return parsed;
+    return result as EvaluationResult;
   } catch (err) {
     console.error("❌ Evaluation Error:", err);
     throw err;
