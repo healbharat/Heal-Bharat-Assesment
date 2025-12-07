@@ -1,9 +1,13 @@
 
+export type QuestionType = 'DICTATION' | 'VERBAL';
+
 export interface Question {
   id: string;
+  type: QuestionType; // 'DICTATION' or 'VERBAL'
   text: string;
   context?: string; // Additional context if needed
   difficulty: 'Easy' | 'Medium' | 'Hard';
+  audioBase64?: string; // Only for DICTATION questions
 }
 
 export interface McqQuestion {
@@ -21,7 +25,7 @@ export interface FeedbackMetric {
 
 export interface EvaluationResult {
   questionId: string;
-  transcription: string;
+  transcription: string; // User's spoken text OR typed text
   overallScore: number;
   clarity: FeedbackMetric;
   confidence: FeedbackMetric;
