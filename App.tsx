@@ -1,7 +1,5 @@
 
 import React, { useState } from 'react';
-import Landing from './components/Landing';
-import AssessmentSession from './components/AssessmentSession';
 import Results from './components/Results';
 import AccessLogin from './components/AccessLogin';
 import StudentForm from './components/StudentForm';
@@ -9,15 +7,13 @@ import AdminDashboard from './components/AdminDashboard';
 import SystemCheck from './components/SystemCheck';
 import MCQSession from './components/MCQSession';
 import InstructionScreen from './components/InstructionScreen';
-import { generateQuestions } from './services/gemini';
-import { Question, EvaluationResult, AppView, StudentProfile } from './types';
-import { APTITUDE_QUESTIONS, TECHNICAL_QUESTIONS } from './data/staticQuestions';
-import { Loader2, Settings, Monitor, ShieldBan } from 'lucide-react';
+import { EvaluationResult, AppView, StudentProfile } from './types';
+import { APTITUDE_QUESTIONS, TECHNICAL_QUESTIONS, COMMUNICATION_QUESTIONS } from './data/staticQuestions';
+import { Loader2 } from 'lucide-react';
 import { BackendService } from './services/backend';
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.ACCESS_CODE);
-  const [questions, setQuestions] = useState<Question[]>([]);
   const [results, setResults] = useState<EvaluationResult[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -27,8 +23,10 @@ const App: React.FC = () => {
   // Scores State
   const [aptitudeScore, setAptitudeScore] = useState(0);
   const [technicalScore, setTechnicalScore] = useState(0);
+  const [communicationScore, setCommunicationScore] = useState(0);
 
   // Setup State
+  // Topic and Difficulty are less relevant for static MCQs but kept for record keeping
   const [selectedTopic, setSelectedTopic] = useState("General Professionalism");
   const [difficulty, setDifficulty] = useState("Medium");
 
@@ -69,10 +67,36 @@ const App: React.FC = () => {
       setView(AppView.TECHNICAL_TEST);
   };
 
-  // 5. Technical Complete -> Landing (Intro to Communication)
+  // 5. Technical Complete -> Communication Instructions
   const handleTechnicalComplete = (score: number) => {
     setTechnicalScore(score);
-    setView(AppView.LANDING);
+    setView(AppView.COMMUNICATION_INSTRUCTIONS);
+  };
+
+  // 6. Start Communication Test
+  const startCommunicationTest = () => {
+      requestFullScreen();
+      setView(AppView.COMMUNICATION_TEST);
+  };
+
+  // 7. Communication Complete -> Submit and Show Results
+  const handleCommunicationComplete = async (score: number) => {
+    setCommunicationScore(score);
+    setLoading(true);
+
+    if (studentProfile) {
+        await BackendService.saveAssessment(
+            studentProfile, 
+            selectedTopic, 
+            difficulty, 
+            aptitudeScore,
+            technicalScore,
+            score, // Communication Score
+            [] // No detailed voice results anymore
+        );
+    }
+    setLoading(false);
+    setView(AppView.RESULTS);
   };
 
   const requestFullScreen = () => {
@@ -84,46 +108,6 @@ const App: React.FC = () => {
       }
   };
 
-  const startAssessment = async () => {
-    // Ensure fullscreen is active
-    if (!document.fullscreenElement) {
-        requestFullScreen();
-    }
-
-    setLoading(true);
-    setView(AppView.SETUP); 
-    
-    try {
-      const generatedQuestions = await generateQuestions(selectedTopic, difficulty, 3);
-      setQuestions(generatedQuestions);
-      setResults([]);
-      setLoading(false);
-      setView(AppView.ASSESSMENT);
-    } catch (error) {
-      console.error("Failed to start", error);
-      setLoading(false);
-      alert("Could not generate questions. Please check your connection or API key.");
-      setView(AppView.LANDING);
-    }
-  };
-
-  const handleAssessmentComplete = async (finalResults: EvaluationResult[]) => {
-    setResults(finalResults);
-    
-    if (studentProfile) {
-        await BackendService.saveAssessment(
-            studentProfile, 
-            selectedTopic, 
-            difficulty, 
-            aptitudeScore,
-            technicalScore,
-            finalResults
-        );
-    }
-    
-    setView(AppView.RESULTS);
-  };
-
   const handleBlockUser = async () => {
     if (studentProfile) {
         await BackendService.blockUser(studentProfile, "Screen Minimization / Tab Switching");
@@ -132,110 +116,45 @@ const App: React.FC = () => {
         alert("SECURITY VIOLATION: You have been blocked from the Tronex Platform due to repeated screen minimization. Contact Admin.");
         
         setStudentProfile(null);
-        setQuestions([]);
         setResults([]);
         setAptitudeScore(0);
         setTechnicalScore(0);
+        setCommunicationScore(0);
         setView(AppView.ACCESS_CODE);
     }
   };
 
   const handleRestart = () => {
     setStudentProfile(null);
-    setQuestions([]);
     setResults([]);
     setAptitudeScore(0);
     setTechnicalScore(0);
+    setCommunicationScore(0);
     setView(AppView.ACCESS_CODE);
   };
   
   const handleLogout = () => {
     setStudentProfile(null);
-    setQuestions([]);
     setResults([]);
     setAptitudeScore(0);
     setTechnicalScore(0);
+    setCommunicationScore(0);
     setView(AppView.ACCESS_CODE);
   };
 
   // Loading Screen
-  if (view === AppView.SETUP && loading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
          <Loader2 className="w-16 h-16 text-indigo-600 animate-spin mb-4" />
-         <h2 className="text-xl font-bold text-slate-800">Tronex AI is Preparing...</h2>
-         <p className="text-slate-500 mt-2">Generating personalized questions</p>
+         <h2 className="text-xl font-bold text-slate-800">Processing Results...</h2>
+         <p className="text-slate-500 mt-2">Saving assessment data securely.</p>
       </div>
     );
   }
 
-  // Topic Config Component
-  const ShowSetup = () => (
-     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-        <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl border border-slate-100">
-            <div className="text-center mb-8">
-                <div className="inline-flex p-3 bg-indigo-50 rounded-full mb-4">
-                    <Settings className="w-8 h-8 text-indigo-600" />
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900">Communication Setup</h2>
-                {studentProfile && (
-                    <p className="text-slate-500 mt-2">Candidate: {studentProfile.name}</p>
-                )}
-            </div>
-            
-            <div className="space-y-6">
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Topic</label>
-                    <select 
-                        value={selectedTopic}
-                        onChange={(e) => setSelectedTopic(e.target.value)}
-                        className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
-                    >
-                        <option value="General Professionalism">General Professionalism</option>
-                        <option value="Software Engineering">Software Engineering</option>
-                        <option value="Product Management">Product Management</option>
-                        <option value="Sales & Marketing">Sales & Marketing</option>
-                        <option value="Leadership">Leadership & Conflict</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Difficulty</label>
-                    <div className="grid grid-cols-3 gap-3">
-                        {['Easy', 'Medium', 'Hard'].map((diff) => (
-                            <button
-                                key={diff}
-                                onClick={() => setDifficulty(diff)}
-                                className={`py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                                    difficulty === diff 
-                                    ? 'bg-indigo-600 text-white shadow-md' 
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}
-                            >
-                                {diff}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100 text-sm text-yellow-800 flex items-start">
-                    <Monitor className="w-5 h-5 mr-2 flex-shrink-0" />
-                    <p>Assessment requires full-screen mode. Camera and Microphone must be enabled. Do not switch tabs.</p>
-                </div>
-
-                <button 
-                    onClick={startAssessment}
-                    className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-lg mt-4"
-                >
-                    Start Communication Test
-                </button>
-            </div>
-        </div>
-     </div>
-  );
-
   // Check if we are in an active assessment mode to hide the global header
-  const isAssessmentActive = view === AppView.APTITUDE_TEST || view === AppView.TECHNICAL_TEST;
+  const isAssessmentActive = view === AppView.APTITUDE_TEST || view === AppView.TECHNICAL_TEST || view === AppView.COMMUNICATION_TEST;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
@@ -314,32 +233,38 @@ const App: React.FC = () => {
             />
         )}
 
+        {/* Communication Instructions */}
+        {view === AppView.COMMUNICATION_INSTRUCTIONS && (
+            <InstructionScreen 
+                title="Phase 3: Communication Test"
+                duration="20 Minutes"
+                questionCount={20}
+                onStart={startCommunicationTest}
+            />
+        )}
+
+        {/* Communication Section: 20 mins (MCQ Based) */}
+        {view === AppView.COMMUNICATION_TEST && (
+            <MCQSession 
+                title="Communication Assessment" 
+                questions={COMMUNICATION_QUESTIONS}
+                durationMinutes={20}
+                candidateName={studentProfile?.name || 'Candidate'}
+                onComplete={handleCommunicationComplete}
+                onBlock={handleBlockUser}
+            />
+        )}
+
         {view === AppView.ADMIN_DASHBOARD && (
             <AdminDashboard onLogout={handleLogout} />
         )}
 
-        {view === AppView.LANDING && (
-            <Landing onStart={() => setView(AppView.SETUP)} />
-        )}
-        
-        {view === AppView.SETUP && !loading && <ShowSetup />}
-        
-        {view === AppView.ASSESSMENT && (
-            <div className="h-screen pt-12 pb-4">
-                <AssessmentSession 
-                    questions={questions} 
-                    onComplete={handleAssessmentComplete}
-                    onBlock={handleBlockUser}
-                />
-            </div>
-        )}
-        
         {view === AppView.RESULTS && (
              <div className="pt-20 pb-12">
                  <Results 
                     aptitudeScore={aptitudeScore} 
                     technicalScore={technicalScore} 
-                    communicationResults={results} 
+                    communicationResults={[]} // No detail results for MCQs in this view
                     onRestart={handleRestart} 
                  />
              </div>
