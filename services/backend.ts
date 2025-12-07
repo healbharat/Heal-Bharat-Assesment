@@ -1,14 +1,10 @@
 import { AssessmentRecord, StudentProfile, EvaluationResult } from '../types';
 
-// STORAGE KEYS (Only used if simulator mode)
-const DB_KEY = 'interncomm_mongodb_simulation';
-const BLOCKED_KEY = 'interncomm_blocked_users';
-
-// ⭐ BACKEND ENABLED
+// ⭐ REAL BACKEND ENABLED
 const USE_REAL_BACKEND = true;
 
-// ⭐ Render backend URL (from env)
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL + "/api";
+// ⭐ Render backend URL from environment
+const API_BASE_URL = `${import.meta.env.VITE_BACKEND_URL}/api`;
 
 export interface BlockedUser {
   name: string;
@@ -29,7 +25,7 @@ export const BackendService = {
     communicationResults: EvaluationResult[]
   ): Promise<boolean> => {
     try {
-      const commTotal = communicationResults.reduce((a, r) => a + r.overallScore, 0);
+      const commTotal = communicationResults.reduce((acc, r) => acc + r.overallScore, 0);
       const commScore = Math.round(commTotal / communicationResults.length);
       const overallScore = Math.round((aptitudeScore + technicalScore + commScore) / 3);
 
@@ -56,49 +52,67 @@ export const BackendService = {
 
       return response.ok;
 
-    } catch (error) {
-      console.error("Backend save error:", error);
+    } catch (err) {
+      console.error("Save assessment error:", err);
       return false;
     }
   },
 
   getAllRecords: async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/assessments`);
-      return await response.json();
+      const res = await fetch(`${API_BASE_URL}/assessments`);
+      return await res.json();
     } catch (err) {
       console.error("Fetch records error:", err);
       return [];
     }
   },
 
-  verifyAccessCode: () => true,
-
   blockUser: async (profile: StudentProfile, reason: string) => {
-    await fetch(`${API_BASE_URL}/block`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...profile, reason })
-    });
+    try {
+      await fetch(`${API_BASE_URL}/block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, reason })
+      });
+    } catch (err) {
+      console.error("Block user error:", err);
+    }
   },
 
   unblockUser: async (email: string) => {
-    await fetch(`${API_BASE_URL}/block/${email}`, { method: "DELETE" });
+    try {
+      await fetch(`${API_BASE_URL}/block/${email}`, { method: "DELETE" });
+    } catch (err) {
+      console.error("Unblock user error:", err);
+    }
   },
 
   isUserBlocked: async (email: string): Promise<boolean> => {
-    const res = await fetch(`${API_BASE_URL}/check-block`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
-    });
+    try {
+      const res = await fetch(`${API_BASE_URL}/check-block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
 
-    const data = await res.json();
-    return data.isBlocked;
+      const data = await res.json();
+      return data.isBlocked;
+
+    } catch (err) {
+      console.error("Check block error:", err);
+      return false;
+    }
   },
 
   getBlockedUsers: async () => {
-    const response = await fetch(`${API_BASE_URL}/blocked`);
-    return await response.json();
+    try {
+      const res = await fetch(`${API_BASE_URL}/blocked`);
+      return await res.json();
+    } catch (err) {
+      console.error("Get blocked error:", err);
+      return [];
+    }
   }
+
 };
