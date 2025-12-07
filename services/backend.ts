@@ -11,7 +11,7 @@ const BLOCKED_KEY = 'interncomm_blocked_users';
 // CHANGED: Default to false to ensure stability on Render/Vercel without backend
 const USE_REAL_BACKEND = false; 
 
-const API_BASE_URL = 'https://heal-bharat-assesment.onrender.com';
+const API_BASE_URL = 'http://localhost:5000/api';
 
 export interface BlockedUser {
   name: string;

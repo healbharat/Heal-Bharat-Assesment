@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Question, EvaluationResult } from '../types';
-import { evaluateAnswer } from "../services/api";
+import { evaluateAnswer } from '../services/gemini';
 import { blobToBase64, decodePCM, playAudioBuffer } from '../services/audioUtils';
 import Visualizer from './Visualizer';
 import { Mic, Loader2, Camera, Eye, ShieldAlert, Play, Type, ArrowRight, Volume2 } from 'lucide-react';
