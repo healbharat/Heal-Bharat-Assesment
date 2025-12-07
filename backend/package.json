@@ -1,19 +1,15 @@
 {
-  "name": "heal-bharat-assesment",
+  "name": "heal-bharat-proxy",
   "version": "1.0.0",
-  "private": true,
+  "main": "server.js",
+  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "start": "node server.js"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^4.2.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "devDependencies": {
-    "vite": "^5.1.0",
-    "typescript": "^5.0.0"
+    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
+    "node-fetch": "^3.4.1",
+    "cors": "^2.8.5"
   }
 }
