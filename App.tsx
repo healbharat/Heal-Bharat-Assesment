@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Landing from './components/Landing';
 import AssessmentSession from './components/AssessmentSession';
@@ -9,11 +8,15 @@ import AdminDashboard from './components/AdminDashboard';
 import SystemCheck from './components/SystemCheck';
 import MCQSession from './components/MCQSession';
 import InstructionScreen from './components/InstructionScreen';
-import { generateQuestions } from './services/gemini';
+
+import { generateQuestions, evaluateAnswer } from './services/api';
+import { BackendService } from './services/backend';
+
 import { Question, EvaluationResult, AppView, StudentProfile } from './types';
 import { APTITUDE_QUESTIONS, TECHNICAL_QUESTIONS } from './data/staticQuestions';
+
 import { Loader2, Settings, Monitor, ShieldBan } from 'lucide-react';
-import { BackendService } from './services/backend.ts';
+
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.ACCESS_CODE);
