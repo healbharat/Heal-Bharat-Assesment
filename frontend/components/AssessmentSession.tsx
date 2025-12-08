@@ -28,26 +28,22 @@ const AssessmentSession: React.FC<AssessmentSessionProps> = ({
   };
 
   // Convert MCQ to EvaluationResult format
-  const submitResults = () => {
-    const results: EvaluationResult[] = questions.map((q) => {
-      const selected = answers[q.id];
-      const isCorrect = selected === q.correctAnswer;
+const finalScore = calculateMCQScore();
 
-      return {
-        questionId: q.id,
-        transcription: selected || "",
-        overallScore: isCorrect ? 100 : 0,
-        clarity: { score: 100, reasoning: "MCQ" },
-        confidence: { score: 100, reasoning: "MCQ" },
-        contentQuality: { score: 100, reasoning: "MCQ" },
-        grammarAndFluency: { score: 100, reasoning: "MCQ" },
-        keyTakeaways: [],
-        improvementTips: [],
-      };
-    });
+const formattedResult: EvaluationResult = {
+  questionId: "comm_mcq_1",
+  transcription: "MCQ communication test",
+  overallScore: finalScore,
+  clarity: { score: finalScore, reasoning: "MCQ" },
+  confidence: { score: finalScore, reasoning: "MCQ" },
+  contentQuality: { score: finalScore, reasoning: "MCQ" },
+  grammarAndFluency: { score: finalScore, reasoning: "MCQ" },
+  keyTakeaways: [],
+  improvementTips: []
+};
 
-    onComplete(results);
-  };
+onComplete([formattedResult]);
+
 
   return (
     <div className="max-w-3xl mx-auto mt-16">
