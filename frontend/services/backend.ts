@@ -3,10 +3,9 @@ import { AssessmentRecord, StudentProfile, EvaluationResult } from "../types";
 const DB_KEY = "interncomm_mongodb_simulation";
 const BLOCKED_KEY = "interncomm_blocked_users";
 
-// MUST BE TRUE IN PRODUCTION
 const USE_REAL_BACKEND = true;
 
-// Render Env → VITE_API_BASE_URL
+// Render Env → MUST contain VITE_API_BASE_URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export interface BlockedUser {
@@ -19,40 +18,42 @@ export interface BlockedUser {
 
 export const BackendService = {
 
-  // ---------------------------------------------
-  // SAVE ASSESSMENT (FIXED VERSION)
-  // ---------------------------------------------
+  // ---------------------------------------------------------
+  // SAVE ASSESSMENT (FINAL FIXED VERSION)
+  // ---------------------------------------------------------
   saveAssessment: async (
     profile: StudentProfile,
     topic: string,
     difficulty: string,
     aptitudeScore: number,
     technicalScore: number,
-    communicationResults: EvaluationResult[] | any
+    communicationResults: any
   ): Promise<boolean> => {
     try {
       console.log("COMM RESULTS RAW =>", communicationResults);
 
-      // Ensure results is ALWAYS an array
+      // ---- ALWAYS FORCE INTO ARRAY ----
       const resultsArray: EvaluationResult[] = Array.isArray(communicationResults)
         ? communicationResults
         : [];
 
-      // SAFE Score calculations
-      const total = resultsArray.reduce(
-        (acc, r) => acc + (r?.overallScore ?? 0),
+      // ---- FIX: SAFE COMMUNICATION SCORE ----
+      const totalScore = resultsArray.reduce(
+        (sum, r) => sum + (r?.overallScore ?? 0),
         0
       );
 
-      const communicationScore = resultsArray.length
-        ? Math.round(total / resultsArray.length)
-        : 0;
+      const communicationScore =
+        resultsArray.length > 0
+          ? Math.round(totalScore / resultsArray.length)
+          : 0;
 
+      // ---- FINAL OVERALL SCORE ----
       const overallScore = Math.round(
         (aptitudeScore + technicalScore + communicationScore) / 3
       );
 
-      // Final record to save
+      // ---- FINAL OBJECT SENT TO BACKEND ----
       const record: AssessmentRecord = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
@@ -65,32 +66,37 @@ export const BackendService = {
         technicalScore,
         communicationScore,
         overallScore,
-        results: resultsArray
+        results: resultsArray,
       };
 
       console.log("FINAL RECORD SENDING =>", record);
 
+      // -----------------------------
+      // SEND TO REAL BACKEND
+      // -----------------------------
       if (USE_REAL_BACKEND) {
         const res = await fetch(`${API_BASE_URL}/assessments`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(record)
+          body: JSON.stringify(record),
         });
 
         console.log("SAVE STATUS:", res.status);
 
         if (!res.ok) {
-          const err = await res.text();
-          console.error("SAVE FAILED RESPONSE:", err);
+          console.error("SAVE FAILED RESPONSE:", await res.text());
         }
 
         return res.ok;
       }
 
-      // LOCAL STORAGE fallback
+      // -----------------------------
+      // LOCAL STORAGE FALLBACK
+      // -----------------------------
       const list = JSON.parse(localStorage.getItem(DB_KEY) || "[]");
       list.push(record);
       localStorage.setItem(DB_KEY, JSON.stringify(list));
+
       return true;
 
     } catch (err) {
@@ -99,7 +105,7 @@ export const BackendService = {
     }
   },
 
-  // ---------------------------------------------
+  // ---------------------------------------------------------
   getAllRecords: async (): Promise<AssessmentRecord[]> => {
     if (USE_REAL_BACKEND) {
       try {
@@ -113,68 +119,66 @@ export const BackendService = {
     return JSON.parse(localStorage.getItem(DB_KEY) || "[]");
   },
 
-  // ---------------------------------------------
+  // ---------------------------------------------------------
   verifyAccessCode: (code: string) => code === "assess-healbharat",
 
-  // ---------------------------------------------
+  // ---------------------------------------------------------
   blockUser: async (profile: StudentProfile, reason: string) => {
-    if (USE_REAL_BACKEND) {
-      try {
-        await fetch(`${API_BASE_URL}/block`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...profile, reason })
-        });
-      } catch (err) {
-        console.error("Block Error:", err);
-      }
-      return;
+    if (!USE_REAL_BACKEND) return;
+
+    try {
+      await fetch(`${API_BASE_URL}/block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, reason }),
+      });
+    } catch (err) {
+      console.error("Block Error:", err);
     }
   },
 
-  // ---------------------------------------------
+  // ---------------------------------------------------------
   unblockUser: async (email: string) => {
-    if (USE_REAL_BACKEND) {
-      try {
-        await fetch(`${API_BASE_URL}/block/${email}`, { method: "DELETE" });
-      } catch (err) {
-        console.error("Unblock Error:", err);
-      }
-      return;
+    if (!USE_REAL_BACKEND) return;
+
+    try {
+      await fetch(`${API_BASE_URL}/block/${email}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      console.error("Unblock Error:", err);
     }
   },
 
-  // ---------------------------------------------
+  // ---------------------------------------------------------
   isUserBlocked: async (email: string): Promise<boolean> => {
-    if (USE_REAL_BACKEND) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/check-block`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email })
-        });
+    if (!USE_REAL_BACKEND) return false;
 
-        const data = await res.json();
-        return data.isBlocked;
-      } catch (err) {
-        console.error("Check block error:", err);
-        return false;
-      }
+    try {
+      const res = await fetch(`${API_BASE_URL}/check-block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await res.json();
+      return data.isBlocked;
+    } catch (err) {
+      console.error("Check block error:", err);
+      return false;
     }
-    return false;
   },
 
-  // ---------------------------------------------
+  // ---------------------------------------------------------
   getBlockedUsers: async (): Promise<BlockedUser[]> => {
-    if (USE_REAL_BACKEND) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/blocked`);
-        return await res.json();
-      } catch (err) {
-        console.error("Get Blocked Error:", err);
-        return [];
-      }
+    if (!USE_REAL_BACKEND) return [];
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/blocked`);
+      return await res.json();
+    } catch (err) {
+      console.error("Get Blocked Error:", err);
+      return [];
     }
-    return [];
   },
 };
