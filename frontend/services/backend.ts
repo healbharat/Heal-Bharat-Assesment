@@ -6,8 +6,8 @@ const BLOCKED_KEY = "interncomm_blocked_users";
 // MUST BE TRUE IN PRODUCTION
 const USE_REAL_BACKEND = true;
 
+// Render Env → VITE_API_BASE_URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-
 
 export interface BlockedUser {
   name: string;
@@ -19,25 +19,40 @@ export interface BlockedUser {
 
 export const BackendService = {
 
-  // SAVE ASSESSMENT ------------------------------------
+  // ---------------------------------------------
+  // SAVE ASSESSMENT (FIXED VERSION)
+  // ---------------------------------------------
   saveAssessment: async (
     profile: StudentProfile,
     topic: string,
     difficulty: string,
     aptitudeScore: number,
     technicalScore: number,
-    communicationResults: EvaluationResult[] = []
+    communicationResults: EvaluationResult[] | any
   ): Promise<boolean> => {
     try {
-      const total = communicationResults.reduce((acc, r) => acc + (r.overallScore || 0), 0);
-      const communicationScore = communicationResults.length
-        ? Math.round(total / communicationResults.length)
+      console.log("COMM RESULTS RAW =>", communicationResults);
+
+      // Ensure results is ALWAYS an array
+      const resultsArray: EvaluationResult[] = Array.isArray(communicationResults)
+        ? communicationResults
+        : [];
+
+      // SAFE Score calculations
+      const total = resultsArray.reduce(
+        (acc, r) => acc + (r?.overallScore ?? 0),
+        0
+      );
+
+      const communicationScore = resultsArray.length
+        ? Math.round(total / resultsArray.length)
         : 0;
 
       const overallScore = Math.round(
         (aptitudeScore + technicalScore + communicationScore) / 3
       );
 
+      // Final record to save
       const record: AssessmentRecord = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
@@ -50,8 +65,10 @@ export const BackendService = {
         technicalScore,
         communicationScore,
         overallScore,
-        results: communicationResults
+        results: resultsArray
       };
+
+      console.log("FINAL RECORD SENDING =>", record);
 
       if (USE_REAL_BACKEND) {
         const res = await fetch(`${API_BASE_URL}/assessments`, {
@@ -62,17 +79,15 @@ export const BackendService = {
 
         console.log("SAVE STATUS:", res.status);
 
-        const text = await res.text();
-        try {
-          console.log("SAVE RESPONSE:", JSON.parse(text));
-        } catch {
-          console.log("SAVE RAW:", text);
+        if (!res.ok) {
+          const err = await res.text();
+          console.error("SAVE FAILED RESPONSE:", err);
         }
 
         return res.ok;
       }
 
-      // FALLBACK STORAGE
+      // LOCAL STORAGE fallback
       const list = JSON.parse(localStorage.getItem(DB_KEY) || "[]");
       list.push(record);
       localStorage.setItem(DB_KEY, JSON.stringify(list));
@@ -84,7 +99,7 @@ export const BackendService = {
     }
   },
 
-  // GET ALL RECORDS ------------------------------------
+  // ---------------------------------------------
   getAllRecords: async (): Promise<AssessmentRecord[]> => {
     if (USE_REAL_BACKEND) {
       try {
@@ -95,14 +110,13 @@ export const BackendService = {
         return [];
       }
     }
-
     return JSON.parse(localStorage.getItem(DB_KEY) || "[]");
   },
 
-  // ACCESS CODE ----------------------------------------
+  // ---------------------------------------------
   verifyAccessCode: (code: string) => code === "assess-healbharat",
 
-  // BLOCK USER -----------------------------------------
+  // ---------------------------------------------
   blockUser: async (profile: StudentProfile, reason: string) => {
     if (USE_REAL_BACKEND) {
       try {
@@ -118,7 +132,7 @@ export const BackendService = {
     }
   },
 
-  // UNBLOCK USER --------------------------------------
+  // ---------------------------------------------
   unblockUser: async (email: string) => {
     if (USE_REAL_BACKEND) {
       try {
@@ -130,7 +144,7 @@ export const BackendService = {
     }
   },
 
-  // CHECK BLOCK ---------------------------------------
+  // ---------------------------------------------
   isUserBlocked: async (email: string): Promise<boolean> => {
     if (USE_REAL_BACKEND) {
       try {
@@ -150,7 +164,7 @@ export const BackendService = {
     return false;
   },
 
-  // GET BLOCKED USERS ---------------------------------
+  // ---------------------------------------------
   getBlockedUsers: async (): Promise<BlockedUser[]> => {
     if (USE_REAL_BACKEND) {
       try {
