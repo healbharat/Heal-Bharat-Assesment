@@ -1,95 +1,117 @@
-import express from "express";
-import cors from "cors";
-import mongoose from "mongoose";
+// ------------------------------
+//  IMPORTS
+// ------------------------------
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+require("dotenv").config();
 
+// ------------------------------
+//  INITIALIZE APP
+// ------------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --------------------------------------------
-// MongoDB CONNECTION
-// --------------------------------------------
-const MONGO_URI = process.env.MONGO_URI;
+// ------------------------------
+//  CONNECT MONGO
+// ------------------------------
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.log("❌ MongoDB Error:", err));
 
-mongoose.connect(MONGO_URI, {
-  serverSelectionTimeoutMS: 5000
-})
-.then(() => console.log("✅ MongoDB Connected"))
-.catch(err => console.error("❌ MongoDB Error:", err));
+// ------------------------------
+//  SCHEMAS (Dynamic – no strict fields)
+// ------------------------------
+const assessmentSchema = new mongoose.Schema({}, { strict: false });
+const blockSchema = new mongoose.Schema({}, { strict: false });
 
-// --------------------------------------------
-// MODELS
-// --------------------------------------------
-const AssessmentSchema = new mongoose.Schema({
-  id: String,
-  timestamp: Number,
-  name: String,
-  email: String,
-  phone: String,
-  topic: String,
-  difficulty: String,
-  aptitudeScore: Number,
-  technicalScore: Number,
-  communicationScore: Number,
-  overallScore: Number,
-  results: Array
+const Assessment = mongoose.model("assessments", assessmentSchema);
+const BlockedUser = mongoose.model("blockedusers", blockSchema);
+
+// ------------------------------
+//  ROUTES
+// ------------------------------
+
+// Test Route
+app.get("/", (req, res) => {
+  res.send("Backend Running Successfully ✔");
 });
 
-const BlockedUserSchema = new mongoose.Schema({
-  name: String,
-  email: String,
-  phone: String,
-  timestamp: Number,
-  reason: String
-});
-
-const Assessment = mongoose.model("Assessment", AssessmentSchema);
-const BlockedUser = mongoose.model("BlockedUser", BlockedUserSchema);
-
-// --------------------------------------------
-// ROUTES
-// --------------------------------------------
-
-// SAVE ASSESSMENT
+// Save Assessment
 app.post("/api/assessments", async (req, res) => {
   try {
-    await Assessment.create(req.body);
-    res.status(200).json({ message: "Saved" });
+    const result = await Assessment.create(req.body);
+    return res.status(200).json({ success: true, result });
   } catch (err) {
-    res.status(500).json({ error: err });
+    console.log("Save Error:", err);
+    return res.status(500).json({ success: false });
   }
 });
 
-// GET ASSESSMENTS
+// Get All Assessments
 app.get("/api/assessments", async (req, res) => {
-  const data = await Assessment.find().sort({ timestamp: -1 });
-  res.json(data);
+  try {
+    const data = await Assessment.find().sort({ timestamp: -1 });
+    return res.json(data);
+  } catch (err) {
+    console.log("Fetch Error:", err);
+    return res.json([]);
+  }
 });
 
-// BLOCK USER
+// Block User
 app.post("/api/block", async (req, res) => {
-  await BlockedUser.create(req.body);
-  res.json({ message: "User Blocked" });
+  try {
+    await BlockedUser.create(req.body);
+    return res.json({ success: true });
+  } catch (err) {
+    console.log("Block Error:", err);
+    return res.json({ success: false });
+  }
 });
 
-// UNBLOCK USER
-app.delete("/api/block/:email", async (req, res) => {
-  await BlockedUser.deleteOne({ email: req.params.email });
-  res.json({ message: "User Unblocked" });
-});
-
-// CHECK BLOCK
-app.post("/api/check-block", async (req, res) => {
-  const exists = await BlockedUser.findOne({ email: req.body.email });
-  res.json({ isBlocked: !!exists });
-});
-
-// GET BLOCKED USERS
+// Get Blocked Users
 app.get("/api/blocked", async (req, res) => {
-  const list = await BlockedUser.find();
-  res.json(list);
+  try {
+    const data = await BlockedUser.find();
+    return res.json(data);
+  } catch (err) {
+    console.log("Fetch Block Error:", err);
+    return res.json([]);
+  }
 });
 
-// --------------------------------------------
+// Unblock User
+app.delete("/api/block/:email", async (req, res) => {
+  try {
+    await BlockedUser.deleteOne({ email: req.params.email });
+    return res.json({ success: true });
+  } catch (err) {
+    console.log("Unblock Error:", err);
+    return res.json({ success: false });
+  }
+});
+
+// Check if user is blocked
+app.post("/api/check-block", async (req, res) => {
+  try {
+    const user = await BlockedUser.findOne({ email: req.body.email });
+    return res.json({ isBlocked: !!user });
+  } catch (err) {
+    console.log("Check Block Error:", err);
+    return res.json({ isBlocked: false });
+  }
+});
+
+// ------------------------------
+//  START SERVER
+// ------------------------------
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("🚀 Backend running on port", PORT));
+app.listen(PORT, () =>
+  console.log(`🚀 Backend running on port ${PORT}`)
+);
