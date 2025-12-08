@@ -6,7 +6,7 @@ const BLOCKED_KEY = "interncomm_blocked_users";
 // MUST BE TRUE IN PRODUCTION
 const USE_REAL_BACKEND = true;
 
-const API_BASE_URL = "https://heal-bharat-assesment.onrender.com/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 
 export interface BlockedUser {
