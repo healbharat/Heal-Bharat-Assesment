@@ -1,24 +1,23 @@
 import { AssessmentRecord, StudentProfile, EvaluationResult } from "../types";
 
-// -------------------------------------------
-// LOCAL FALLBACK (जर backend down झाला तर)
-// -------------------------------------------
+// -------------------------------
+// Local Storage Keys (fallback)
+// -------------------------------
 const DB_KEY = "interncomm_mongodb_simulation";
 const BLOCKED_KEY = "interncomm_blocked_users";
 
-// -------------------------------------------
-// ENABLE REAL BACKEND
-// -------------------------------------------
+// -------------------------------
+// USE REAL BACKEND
+// -------------------------------
 const USE_REAL_BACKEND = true;
 
-// -------------------------------------------
-// BACKEND BASE URL (IMPORTANT: /api नाही लावायचं इथे)
-// -------------------------------------------
-const API_BASE_URL = "https://heal-bharat-assesment.onrender.com/api";
+// -------------------------------
+// Correct Render Backend URL
+// -------------------------------
+export const API_BASE_URL =
+  "https://heal-bharat-assesment.onrender.com/api";
 
-// -------------------------------------------
-// TYPES
-// -------------------------------------------
+// -------------------------------
 export interface BlockedUser {
   name: string;
   email: string;
@@ -27,29 +26,30 @@ export interface BlockedUser {
   reason: string;
 }
 
-// -------------------------------------------
+// -------------------------------
 // BACKEND SERVICE
-// -------------------------------------------
+// -------------------------------
 export const BackendService = {
-
-  // ============================================================
-  //  SAVE ASSESSMENT
-  // ============================================================
+  /* ----------------------------------------------
+   * SAVE ASSESSMENT (with debug logging)
+   * ---------------------------------------------- */
   saveAssessment: async (
     profile: StudentProfile,
     topic: string,
     difficulty: string,
     aptitudeScore: number,
     technicalScore: number,
-    communicationResults: EvaluationResult[]
+    communicationResults: EvaluationResult[] = []
   ): Promise<boolean> => {
     try {
-      // Calculate communication score
-      const total = communicationResults.reduce((acc, r) => acc + r.overallScore, 0);
-      const communicationScore =
-        communicationResults.length > 0
-          ? Math.round(total / communicationResults.length)
-          : 0;
+      // calculate communication score
+      const total = communicationResults.reduce(
+        (acc, r) => acc + (r.overallScore || 0),
+        0
+      );
+      const communicationScore = communicationResults.length
+        ? Math.round(total / communicationResults.length)
+        : 0;
 
       const overallScore = Math.round(
         (aptitudeScore + technicalScore + communicationScore) / 3
@@ -67,42 +67,58 @@ export const BackendService = {
         technicalScore,
         communicationScore,
         overallScore,
-        results: communicationResults
+        results: communicationResults,
       };
 
+      // ------------------------
+      // REAL BACKEND SAVE
+      // ------------------------
       if (USE_REAL_BACKEND) {
+        console.log("🔵 saveAssessment -> sending", record);
+
         const res = await fetch(`${API_BASE_URL}/assessments`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(record)
+          body: JSON.stringify(record),
         });
+
+        console.log("🟣 saveAssessment -> status", res.status);
+
+        const text = await res.text();
+        try {
+          console.log("🟢 saveAssessment -> response JSON", JSON.parse(text));
+        } catch {
+          console.log("🟡 saveAssessment -> response TEXT", text);
+        }
 
         return res.ok;
       }
 
-      // fallback (local storage)
+      // ------------------------
+      // LOCAL FALLBACK
+      // ------------------------
       const existing = localStorage.getItem(DB_KEY);
-      const list = existing ? JSON.parse(existing) : [];
-      list.push(record);
-      localStorage.setItem(DB_KEY, JSON.stringify(list));
-      return true;
+      const arr = existing ? JSON.parse(existing) : [];
+      arr.push(record);
+      localStorage.setItem(DB_KEY, JSON.stringify(arr));
 
+      return true;
     } catch (err) {
-      console.error("Save Assessment Error:", err);
+      console.error("❌ Save Assessment Error:", err);
       return false;
     }
   },
 
-  // ============================================================
-  //  GET ALL ASSESSMENTS
-  // ============================================================
+  /* ----------------------------------------------
+   * GET ALL RECORDS
+   * ---------------------------------------------- */
   getAllRecords: async (): Promise<AssessmentRecord[]> => {
     if (USE_REAL_BACKEND) {
       try {
         const res = await fetch(`${API_BASE_URL}/assessments`);
         return await res.json();
       } catch (err) {
-        console.error("Fetch Records Error:", err);
+        console.error("❌ getAllRecords Error:", err);
         return [];
       }
     }
@@ -111,84 +127,106 @@ export const BackendService = {
     return data ? JSON.parse(data) : [];
   },
 
-  // ============================================================
-  //  VERIFY ACCESS CODE
-  // ============================================================
+  /* ----------------------------------------------
+   * VERIFY ACCESS CODE
+   * ---------------------------------------------- */
   verifyAccessCode: (code: string): boolean => {
     return code === "assess-healbharat";
   },
 
-  // ============================================================
-  //  BLOCK USER
-  // ============================================================
+  /* ----------------------------------------------
+   * BLOCK USER
+   * ---------------------------------------------- */
   blockUser: async (profile: StudentProfile, reason: string): Promise<void> => {
     if (USE_REAL_BACKEND) {
       try {
         await fetch(`${API_BASE_URL}/block`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...profile, reason })
+          body: JSON.stringify({ ...profile, reason }),
         });
       } catch (err) {
-        console.error("Block Error:", err);
+        console.error("❌ Block Error:", err);
       }
       return;
     }
+
+    const data = localStorage.getItem(BLOCKED_KEY);
+    const list: BlockedUser[] = data ? JSON.parse(data) : [];
+
+    if (!list.find((u) => u.email === profile.email)) {
+      list.push({
+        name: profile.name,
+        email: profile.email,
+        phone: profile.phone,
+        timestamp: Date.now(),
+        reason,
+      });
+      localStorage.setItem(BLOCKED_KEY, JSON.stringify(list));
+    }
   },
 
-  // ============================================================
-  //  UNBLOCK USER
-  // ============================================================
+  /* ----------------------------------------------
+   * UNBLOCK USER
+   * ---------------------------------------------- */
   unblockUser: async (email: string): Promise<void> => {
     if (USE_REAL_BACKEND) {
       try {
         await fetch(`${API_BASE_URL}/block/${email}`, {
-          method: "DELETE"
+          method: "DELETE",
         });
       } catch (err) {
-        console.error("Unblock Error:", err);
+        console.error("❌ Unblock Error:", err);
       }
       return;
     }
+
+    let list: BlockedUser[] = JSON.parse(
+      localStorage.getItem(BLOCKED_KEY) || "[]"
+    );
+
+    list = list.filter((u) => u.email !== email);
+    localStorage.setItem(BLOCKED_KEY, JSON.stringify(list));
   },
 
-  // ============================================================
-  //  CHECK USER BLOCKED OR NOT
-  // ============================================================
+  /* ----------------------------------------------
+   * CHECK BLOCK STATUS
+   * ---------------------------------------------- */
   isUserBlocked: async (email: string): Promise<boolean> => {
     if (USE_REAL_BACKEND) {
       try {
         const res = await fetch(`${API_BASE_URL}/check-block`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email })
+          body: JSON.stringify({ email }),
         });
 
         const data = await res.json();
         return data.isBlocked;
       } catch (err) {
-        console.error("Check Block Error:", err);
+        console.error("❌ Check Block Error:", err);
         return false;
       }
     }
 
-    return false;
+    const list = JSON.parse(localStorage.getItem(BLOCKED_KEY) || "[]");
+    return !!list.find((u: BlockedUser) => u.email === email);
   },
 
-  // ============================================================
-  //  GET BLOCKED USERS LIST
-  // ============================================================
+  /* ----------------------------------------------
+   * GET BLOCKED USERS
+   * ---------------------------------------------- */
   getBlockedUsers: async (): Promise<BlockedUser[]> => {
     if (USE_REAL_BACKEND) {
       try {
         const res = await fetch(`${API_BASE_URL}/blocked`);
         return await res.json();
       } catch (err) {
-        console.error("Fetch Blocked Users Error:", err);
+        console.error("❌ Fetch Blocked Error:", err);
         return [];
       }
     }
 
-    return [];
-  }
+    return JSON.parse(localStorage.getItem(BLOCKED_KEY) || "[]");
+  },
 };
