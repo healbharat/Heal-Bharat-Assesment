@@ -6,8 +6,8 @@ const BLOCKED_KEY = "interncomm_blocked_users";
 // MUST BE TRUE IN PRODUCTION
 const USE_REAL_BACKEND = true;
 
-// YOUR RENDER BACKEND URL
 const API_BASE_URL = "https://heal-bharat-backend.onrender.com/api";
+
 
 export interface BlockedUser {
   name: string;
