@@ -14,7 +14,7 @@ const USE_REAL_BACKEND = true;
 // -------------------------------------------
 // BACKEND BASE URL (IMPORTANT: /api नाही लावायचं इथे)
 // -------------------------------------------
-const API_BASE_URL = "https://heal-bharat-assesment.onrender.com";
+const API_BASE_URL = "https://heal-bharat-assesment.onrender.com/api";
 
 // -------------------------------------------
 // TYPES
